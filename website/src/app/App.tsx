@@ -75,12 +75,12 @@ export default function App() {
     );
   };
 
-  const handleViewMap = (lotId: string) => {
-    const lot = mockParkingLots.find(l => l.id === lotId);
-    toast.info(`Opening map view for ${lot?.name}`, {
-      description: "Mapbox integration will be implemented separately"
-    });
-  };
+const handleViewMap = (_lotId: string) => {
+  window.open("/map/map.html", "_blank");
+};
+
+
+
 
   const handleUpdatePreferences = (newPreferences: UserPreferences) => {
     setPreferences(newPreferences);
