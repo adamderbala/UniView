@@ -1,0 +1,18 @@
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import "./styles/index.css";
+import App from "./app/App";
+
+console.log("MAIN.TSX RUNNING");
+
+const root = document.getElementById("root");
+
+if (!root) {
+  throw new Error("Root element not found");
+}
+
+createRoot(root).render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+);
