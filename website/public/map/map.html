@@ -2,39 +2,553 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Display a satellite map on a webpage</title>
+<title>UniView Map</title>
 <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.18.1/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.18.1/mapbox-gl.js"></script>
 <style>
-body { margin: 0; padding: 0; }
-#map { position: absolute; top: 0; bottom: 0; width: 100%; }
+  body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+  #map { position: absolute; inset: 0; }
+  .style-switcher {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 20;
+    display: flex;
+    gap: 6px;
+    padding: 6px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(15, 23, 42, 0.2);
+    box-shadow: 0 8px 18px rgba(2, 6, 23, 0.15);
+  }
+  .style-btn {
+    border: 1px solid rgba(15, 23, 42, 0.22);
+    background: #ffffff;
+    color: #111827;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+  .style-btn:hover {
+    background: #f8fafc;
+  }
+  .style-btn.active {
+    background: #991b1b;
+    color: #ffffff;
+    border-color: #7f1d1d;
+  }
 </style>
 </head>
+
 <body>
 <div id="map"></div>
-<script>
-    mapboxgl.accessToken = 'pk.eyJ1IjoiYWRhbWRlcmJhbGEiLCJhIjoiY21sZzA0NGxoMDduMjNmb2tvNGZrdXVociJ9.FBAosa3UI1h0HhlmPef6rw';
-    const map = new mapboxgl.Map({
-        container: 'map', // container ID
-        // Choose from Mapbox's core styles, or make your own style with Mapbox Studio
-        style: 'mapbox://styles/mapbox/standard-satellite',
-        config: {
-            basemap: {
-                showPedestrianRoads: false,
-                showPlaceLabels: true,
-                showPointOfInterestLabels: false,
-                showRoadLabels: false,
-                showTransitLabels: false,
-                showAdminBoundaries: true,
-                showRoadsAndTransit: false
-            }
-        },
-        center: [-74.453369, 40.4967], // starting position [lng, lat]
-        zoom: 12, // starting zoom
-        projection: 'globe'
-    });
-</script>
+<div class="style-switcher">
+  <button id="style-satellite" class="style-btn active" type="button">Satellite</button>
+  <button id="style-dark" class="style-btn" type="button">Dark</button>
+  <button id="style-streets" class="style-btn" type="button">Streets</button>
+</div>
 
+<script>
+mapboxgl.accessToken = 'pk.eyJ1IjoiYWRhbWRlcmJhbGEiLCJhIjoiY21sZzA0NGxoMDduMjNmb2tvNGZrdXVociJ9.FBAosa3UI1h0HhlmPef6rw';
+
+let config = null;
+let selectedCampusId = null;
+let selectedMapLotId = null;
+let initialized = false;
+const pendingCommands = [];
+const layerRegistry = new Map();
+const lotHasSpots = new Map();
+const styleIds = {
+  satellite: "mapbox://styles/mapbox/satellite-streets-v12",
+  dark: "mapbox://styles/mapbox/dark-v11",
+  streets: "mapbox://styles/mapbox/streets-v12"
+};
+let currentStyleKey = "satellite";
+
+function notifyParent(message) {
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage(message, window.location.origin);
+  }
+}
+
+const map = new mapboxgl.Map({
+  container: "map",
+  style: styleIds.satellite,
+  center: [-74.4518, 40.4862],
+  zoom: 12.6,
+  pitch: 32,
+  bearing: -12
+});
+
+function setLayerVisibility(layerId, visibility) {
+  if (map.getLayer(layerId)) {
+    map.setLayoutProperty(layerId, "visibility", visibility);
+  }
+}
+
+function setCampusLayersVisible(visible) {
+  const visibility = visible ? "visible" : "none";
+  setLayerVisibility("uniview-campus-fill", visibility);
+  setLayerVisibility("uniview-campus-outline", visibility);
+  setLayerVisibility("uniview-campus-label", visibility);
+}
+
+function setLotPointsVisible(visible) {
+  const visibility = visible ? "visible" : "none";
+  setLayerVisibility("uniview-lot-points-fill", visibility);
+  setLayerVisibility("uniview-lot-points-label", visibility);
+}
+
+function hideAllLotLayers() {
+  for (const layers of layerRegistry.values()) {
+    setLayerVisibility(layers.boundaryFill, "none");
+    setLayerVisibility(layers.boundaryOutline, "none");
+    setLayerVisibility(layers.spotsFill, "none");
+    setLayerVisibility(layers.spotsOutline, "none");
+  }
+}
+
+function showLotBoundariesForCampus(campusId) {
+  for (const lot of config.lots) {
+    const layers = layerRegistry.get(lot.id);
+    if (!layers) continue;
+    const visible = lot.campusId === campusId;
+    setLayerVisibility(layers.boundaryFill, visible ? "visible" : "none");
+    setLayerVisibility(layers.boundaryOutline, visible ? "visible" : "none");
+    setLayerVisibility(layers.spotsFill, "none");
+    setLayerVisibility(layers.spotsOutline, "none");
+  }
+}
+
+function buildSpotFillExpression(lotConfig) {
+  const expression = ["match", ["get", "spot_id"]];
+  for (const override of lotConfig.styles.spotOverrides) {
+    expression.push(override.spotId, override.fill);
+  }
+  expression.push(lotConfig.styles.defaultSpotFill);
+  return expression;
+}
+
+function buildSpotOutlineColorExpression(lotConfig) {
+  const expression = ["match", ["get", "spot_id"]];
+  for (const override of lotConfig.styles.spotOverrides) {
+    expression.push(override.spotId, override.outline || "#111827");
+  }
+  expression.push("#111827");
+  return expression;
+}
+
+function buildSpotOutlineWidthExpression(lotConfig) {
+  const expression = ["match", ["get", "spot_id"]];
+  for (const override of lotConfig.styles.spotOverrides) {
+    expression.push(override.spotId, override.outlineWidth || 1);
+  }
+  expression.push(1);
+  return expression;
+}
+
+function updateCampusSelectionLayers() {
+  if (selectedCampusId) {
+    map.setFilter("uniview-lot-points-fill", ["==", ["get", "campusId"], selectedCampusId]);
+    map.setFilter("uniview-lot-points-label", ["==", ["get", "campusId"], selectedCampusId]);
+    setLotPointsVisible(false);
+    setCampusLayersVisible(false);
+  } else {
+    setLotPointsVisible(false);
+    setCampusLayersVisible(true);
+  }
+}
+
+function setCampus(campusId, shouldFly = true) {
+  const campus = config.campuses.find((item) => item.id === campusId);
+  if (!campus) return;
+
+  selectedCampusId = campusId;
+  selectedMapLotId = null;
+  showLotBoundariesForCampus(campusId);
+  updateCampusSelectionLayers();
+  notifyParent({ type: "uniview:map-campus-selected", campusId });
+
+  if (shouldFly) {
+    map.flyTo({
+      center: campus.focusView.center,
+      zoom: campus.focusView.zoom,
+      pitch: campus.focusView.pitch,
+      bearing: campus.focusView.bearing,
+      speed: 0.55,
+      essential: true
+    });
+  }
+}
+
+function focusLot(lotId) {
+  const lot = config.lots.find((item) => item.id === lotId);
+  const layers = layerRegistry.get(lotId);
+  if (!lot || !layers) return;
+
+  if (selectedCampusId !== lot.campusId) {
+    setCampus(lot.campusId, false);
+  }
+
+  selectedMapLotId = lotId;
+  hideAllLotLayers();
+  setLotPointsVisible(false);
+  const hasSpots = lotHasSpots.get(lotId) === true;
+  if (hasSpots) {
+    setLayerVisibility(layers.spotsFill, "visible");
+    setLayerVisibility(layers.spotsOutline, "visible");
+  } else {
+    setLayerVisibility(layers.boundaryFill, "visible");
+    setLayerVisibility(layers.boundaryOutline, "visible");
+  }
+  notifyParent({
+    type: "uniview:map-lot-selected",
+    campusId: lot.campusId,
+    mapLotId: lot.id,
+    appLotId: lot.appLotId
+  });
+
+  map.flyTo({
+    center: lot.focusView.center,
+    zoom: lot.focusView.zoom,
+    speed: lot.focusView.speed || 0.7,
+    essential: true
+  });
+}
+
+function resetView() {
+  selectedCampusId = null;
+  selectedMapLotId = null;
+  hideAllLotLayers();
+  updateCampusSelectionLayers();
+
+  map.flyTo({
+    center: config.defaultView.center,
+    zoom: config.defaultView.zoom,
+    pitch: config.defaultView.pitch,
+    bearing: config.defaultView.bearing,
+    speed: 0.6,
+    essential: true
+  });
+}
+
+function restoreSelectionAfterStyleLoad() {
+  if (selectedMapLotId) {
+    focusLot(selectedMapLotId);
+    return;
+  }
+  if (selectedCampusId) {
+    setCampus(selectedCampusId, false);
+    return;
+  }
+  resetView();
+}
+
+async function initializeCampuses() {
+  const features = [];
+
+  for (const campus of config.campuses) {
+    const boundary = await fetch(campus.paths.boundary).then((res) => res.json());
+    const firstFeature = boundary.features && boundary.features[0];
+    if (!firstFeature) continue;
+
+    features.push({
+      type: "Feature",
+      properties: {
+        id: campus.id,
+        name: campus.name
+      },
+      geometry: firstFeature.geometry
+    });
+  }
+
+  map.addSource("uniview-campuses", {
+    type: "geojson",
+    data: {
+      type: "FeatureCollection",
+      features
+    }
+  });
+
+  map.addLayer({
+    id: "uniview-campus-fill",
+    type: "fill",
+    source: "uniview-campuses",
+    paint: {
+      "fill-color": "#dc2626",
+      "fill-opacity": 0.14
+    }
+  });
+
+  map.addLayer({
+    id: "uniview-campus-outline",
+    type: "line",
+    source: "uniview-campuses",
+    paint: {
+      "line-color": "#991b1b",
+      "line-width": 2
+    }
+  });
+
+  map.addLayer({
+    id: "uniview-campus-label",
+    type: "symbol",
+    source: "uniview-campuses",
+    layout: {
+      "text-field": ["get", "name"],
+      "text-size": 13
+    },
+    paint: {
+      "text-color": "#7f1d1d",
+      "text-halo-color": "#ffffff",
+      "text-halo-width": 1
+    }
+  });
+
+  map.on("mouseenter", "uniview-campus-fill", () => {
+    map.getCanvas().style.cursor = "pointer";
+  });
+
+  map.on("mouseleave", "uniview-campus-fill", () => {
+    map.getCanvas().style.cursor = "";
+  });
+
+  map.on("click", "uniview-campus-fill", (event) => {
+    const feature = event.features && event.features[0];
+    if (!feature) return;
+    setCampus(feature.properties.id);
+  });
+}
+
+function initializeLotPoints() {
+  const lotPoints = {
+    type: "FeatureCollection",
+    features: config.lots.map((lot) => ({
+      type: "Feature",
+      properties: {
+        id: lot.id,
+        name: lot.name,
+        campusId: lot.campusId,
+        appLotId: lot.appLotId
+      },
+      geometry: {
+        type: "Point",
+        coordinates: lot.previewPoint
+      }
+    }))
+  };
+
+  map.addSource("uniview-lot-points", {
+    type: "geojson",
+    data: lotPoints
+  });
+
+  map.addLayer({
+    id: "uniview-lot-points-fill",
+    type: "circle",
+    source: "uniview-lot-points",
+    layout: { visibility: "none" },
+    paint: {
+      "circle-radius": 7,
+      "circle-color": "#dc2626",
+      "circle-stroke-color": "#ffffff",
+      "circle-stroke-width": 1.5
+    }
+  });
+
+  map.addLayer({
+    id: "uniview-lot-points-label",
+    type: "symbol",
+    source: "uniview-lot-points",
+    layout: {
+      "visibility": "none",
+      "text-field": ["get", "name"],
+      "text-offset": [0, 1.2],
+      "text-size": 12
+    },
+    paint: {
+      "text-color": "#7f1d1d",
+      "text-halo-color": "#ffffff",
+      "text-halo-width": 1
+    }
+  });
+
+  map.on("mouseenter", "uniview-lot-points-fill", () => {
+    map.getCanvas().style.cursor = "pointer";
+  });
+
+  map.on("mouseleave", "uniview-lot-points-fill", () => {
+    map.getCanvas().style.cursor = "";
+  });
+
+  map.on("click", "uniview-lot-points-fill", (event) => {
+    const feature = event.features && event.features[0];
+    if (!feature) return;
+    focusLot(feature.properties.id);
+  });
+}
+
+async function initializeLotOverlays() {
+  layerRegistry.clear();
+  lotHasSpots.clear();
+  for (const lot of config.lots) {
+    const [boundaryData, spotsData] = await Promise.all([
+      fetch(lot.paths.boundary).then((res) => res.json()),
+      fetch(lot.paths.spots).then((res) => res.json())
+    ]);
+
+    const boundarySourceId = `${lot.id}-boundary-source`;
+    const spotsSourceId = `${lot.id}-spots-source`;
+    const boundaryFillId = `${lot.id}-boundary-fill`;
+    const boundaryOutlineId = `${lot.id}-boundary-outline`;
+    const spotsFillId = `${lot.id}-spots-fill`;
+    const spotsOutlineId = `${lot.id}-spots-outline`;
+
+    layerRegistry.set(lot.id, {
+      boundaryFill: boundaryFillId,
+      boundaryOutline: boundaryOutlineId,
+      spotsFill: spotsFillId,
+      spotsOutline: spotsOutlineId
+    });
+
+    map.addSource(boundarySourceId, {
+      type: "geojson",
+      data: boundaryData
+    });
+
+    map.addSource(spotsSourceId, {
+      type: "geojson",
+      data: spotsData
+    });
+    lotHasSpots.set(lot.id, Array.isArray(spotsData.features) && spotsData.features.length > 0);
+
+    map.addLayer({
+      id: boundaryFillId,
+      type: "fill",
+      source: boundarySourceId,
+      layout: { visibility: "none" },
+      paint: {
+        "fill-color": lot.styles.boundaryFill,
+        "fill-opacity": 0.25
+      }
+    });
+
+    map.addLayer({
+      id: boundaryOutlineId,
+      type: "line",
+      source: boundarySourceId,
+      layout: { visibility: "none" },
+      paint: {
+        "line-color": lot.styles.boundaryOutline,
+        "line-width": 3
+      }
+    });
+
+    map.addLayer({
+      id: spotsFillId,
+      type: "fill",
+      source: spotsSourceId,
+      layout: { visibility: "none" },
+      paint: {
+        "fill-color": buildSpotFillExpression(lot),
+        "fill-opacity": 0.76
+      }
+    });
+
+    map.addLayer({
+      id: spotsOutlineId,
+      type: "line",
+      source: spotsSourceId,
+      layout: { visibility: "none" },
+      paint: {
+        "line-color": buildSpotOutlineColorExpression(lot),
+        "line-width": buildSpotOutlineWidthExpression(lot)
+      }
+    });
+
+    map.on("click", boundaryFillId, () => {
+      focusLot(lot.id);
+    });
+  }
+}
+
+function applyCommand(command) {
+  if (command.type === "uniview:reset-view") {
+    resetView();
+  }
+
+  if (command.type === "uniview:set-campus" && typeof command.campusId === "string") {
+    setCampus(command.campusId);
+  }
+
+  if (command.type === "uniview:focus-lot" && typeof command.lotId === "string") {
+    focusLot(command.lotId);
+  }
+}
+
+async function initializeMap() {
+  if (!config) {
+    config = await fetch("./config/map-config.json").then((res) => res.json());
+  }
+
+  map.jumpTo({
+    center: config.defaultView.center,
+    zoom: config.defaultView.zoom,
+    pitch: config.defaultView.pitch,
+    bearing: config.defaultView.bearing
+  });
+
+  await initializeCampuses();
+  initializeLotPoints();
+  await initializeLotOverlays();
+  restoreSelectionAfterStyleLoad();
+
+  initialized = true;
+
+  while (pendingCommands.length > 0) {
+    applyCommand(pendingCommands.shift());
+  }
+}
+
+map.on("load", () => {
+  initializeMap();
+});
+
+function setActiveStyleButton(styleKey) {
+  document.querySelectorAll(".style-btn").forEach((button) => {
+    button.classList.remove("active");
+  });
+  const selectedButton = document.getElementById(`style-${styleKey}`);
+  if (selectedButton) selectedButton.classList.add("active");
+}
+
+function switchStyle(styleKey) {
+  if (!styleIds[styleKey] || currentStyleKey === styleKey) return;
+  currentStyleKey = styleKey;
+  setActiveStyleButton(styleKey);
+  map.setStyle(styleIds[styleKey]);
+  map.once("style.load", () => {
+    initializeMap();
+  });
+}
+
+document.getElementById("style-satellite").addEventListener("click", () => switchStyle("satellite"));
+document.getElementById("style-dark").addEventListener("click", () => switchStyle("dark"));
+document.getElementById("style-streets").addEventListener("click", () => switchStyle("streets"));
+
+window.addEventListener("message", (event) => {
+  if (!event.data || typeof event.data !== "object") return;
+
+  if (!initialized) {
+    pendingCommands.push(event.data);
+    return;
+  }
+
+  applyCommand(event.data);
+});
+</script>
 </body>
 </html>
