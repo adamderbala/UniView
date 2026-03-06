@@ -1,9 +1,9 @@
 {
   "defaultView": {
-    "center": [-74.4518, 40.4862],
+    "center": [-74.449411, 40.50384],
     "zoom": 12.6,
-    "pitch": 32,
-    "bearing": -12
+    "pitch": 18,
+    "bearing": 0
   },
   "campuses": [
     {
@@ -42,6 +42,19 @@
         "center": [-74.4489, 40.5022],
         "zoom": 14.8,
         "pitch": 36,
+        "bearing": -8
+      }
+    },
+    {
+      "id": "cook-douglass",
+      "name": "Cook/Douglass",
+      "paths": {
+        "boundary": "./data/campuses/cook-douglass.geojson"
+      },
+      "focusView": {
+        "center": [-74.4314, 40.4782],
+        "zoom": 13.9,
+        "pitch": 34,
         "bearing": -8
       }
     }
