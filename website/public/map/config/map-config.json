@@ -1,6 +1,9 @@
 {
   "defaultView": {
-    "center": [-74.449411, 40.50384],
+    "center": [
+      -74.449411,
+      40.50384
+    ],
     "zoom": 12.6,
     "pitch": 18,
     "bearing": 0
@@ -13,7 +16,10 @@
         "boundary": "./data/campuses/busch.geojson"
       },
       "focusView": {
-        "center": [-74.4634, 40.5204],
+        "center": [
+          -74.4634,
+          40.5204
+        ],
         "zoom": 14.6,
         "pitch": 38,
         "bearing": -14
@@ -26,7 +32,10 @@
         "boundary": "./data/campuses/livingston.geojson"
       },
       "focusView": {
-        "center": [-74.4379, 40.5248],
+        "center": [
+          -74.4379,
+          40.5248
+        ],
         "zoom": 14.8,
         "pitch": 38,
         "bearing": -14
@@ -39,7 +48,10 @@
         "boundary": "./data/campuses/college-ave.geojson"
       },
       "focusView": {
-        "center": [-74.4489, 40.5022],
+        "center": [
+          -74.4489,
+          40.5022
+        ],
         "zoom": 14.8,
         "pitch": 36,
         "bearing": -8
@@ -52,7 +64,10 @@
         "boundary": "./data/campuses/cook-douglass.geojson"
       },
       "focusView": {
-        "center": [-74.4314, 40.4782],
+        "center": [
+          -74.4314,
+          40.4782
+        ],
         "zoom": 13.9,
         "pitch": 34,
         "bearing": -8
@@ -65,9 +80,15 @@
       "name": "Stadium West Lot",
       "campusId": "busch",
       "appLotId": "lot-busch-stadium-west",
-      "previewPoint": [-74.4678, 40.5139],
+      "previewPoint": [
+        -74.4678,
+        40.5139
+      ],
       "focusView": {
-        "center": [-74.4678, 40.5139],
+        "center": [
+          -74.4678,
+          40.5139
+        ],
         "zoom": 18.8,
         "speed": 0.65
       },
@@ -87,9 +108,15 @@
       "name": "Yellow Lot",
       "campusId": "livingston",
       "appLotId": "lot-liv-yellow",
-      "previewPoint": [-74.43835, 40.52895],
+      "previewPoint": [
+        -74.43835,
+        40.52895
+      ],
       "focusView": {
-        "center": [-74.43815, 40.52897],
+        "center": [
+          -74.43815,
+          40.52897
+        ],
         "zoom": 20,
         "speed": 0.65
       },
@@ -102,8 +129,18 @@
         "boundaryOutline": "#a16207",
         "defaultSpotFill": "#10b981",
         "spotOverrides": [
-          { "spotId": "spot_3", "fill": "#ef4444", "outline": "#ef4444", "outlineWidth": 4 },
-          { "spotId": "spot_6", "fill": "#facc15", "outline": "#111827", "outlineWidth": 1 }
+          {
+            "spotId": "spot_3",
+            "fill": "#ef4444",
+            "outline": "#ef4444",
+            "outlineWidth": 4
+          },
+          {
+            "spotId": "spot_6",
+            "fill": "#facc15",
+            "outline": "#111827",
+            "outlineWidth": 1
+          }
         ]
       }
     },
@@ -112,9 +149,15 @@
       "name": "Green Lot",
       "campusId": "livingston",
       "appLotId": "lot-liv-green",
-      "previewPoint": [-74.4399, 40.5267],
+      "previewPoint": [
+        -74.4399,
+        40.5267
+      ],
       "focusView": {
-        "center": [-74.4399, 40.5267],
+        "center": [
+          -74.4399,
+          40.5267
+        ],
         "zoom": 19.4,
         "speed": 0.65
       },
@@ -134,9 +177,15 @@
       "name": "Lot 105",
       "campusId": "livingston",
       "appLotId": "lot-liv-105",
-      "previewPoint": [-74.4339, 40.5246],
+      "previewPoint": [
+        -74.4339,
+        40.5246
+      ],
       "focusView": {
-        "center": [-74.4339, 40.5246],
+        "center": [
+          -74.4339,
+          40.5246
+        ],
         "zoom": 19.2,
         "speed": 0.65
       },
@@ -156,9 +205,15 @@
       "name": "Lot 101",
       "campusId": "livingston",
       "appLotId": "lot-liv-101",
-      "previewPoint": [-74.4378, 40.5213],
+      "previewPoint": [
+        -74.4378,
+        40.5213
+      ],
       "focusView": {
-        "center": [-74.4378, 40.5213],
+        "center": [
+          -74.4378,
+          40.5213
+        ],
         "zoom": 19.2,
         "speed": 0.65
       },
@@ -170,7 +225,20 @@
         "boundaryFill": "#a78bfa",
         "boundaryOutline": "#6d28d9",
         "defaultSpotFill": "#10b981",
-        "spotOverrides": []
+        "spotOverrides": [
+          {
+            "spotId": "lot101_spot_168",
+            "fill": "#3b82f6",
+            "outline": "#1d4ed8",
+            "outlineWidth": 3
+          },
+          {
+            "spotId": "lot101_spot_169",
+            "fill": "#3b82f6",
+            "outline": "#1d4ed8",
+            "outlineWidth": 3
+          }
+        ]
       }
     },
     {
@@ -178,9 +246,15 @@
       "name": "Lot 102",
       "campusId": "livingston",
       "appLotId": "lot-liv-102",
-      "previewPoint": [-74.4361, 40.5214],
+      "previewPoint": [
+        -74.4361,
+        40.5214
+      ],
       "focusView": {
-        "center": [-74.4361, 40.5214],
+        "center": [
+          -74.4361,
+          40.5214
+        ],
         "zoom": 19.2,
         "speed": 0.65
       },
@@ -200,9 +274,15 @@
       "name": "Lot 103",
       "campusId": "livingston",
       "appLotId": "lot-liv-103",
-      "previewPoint": [-74.4326, 40.5208],
+      "previewPoint": [
+        -74.4326,
+        40.5208
+      ],
       "focusView": {
-        "center": [-74.4326, 40.5208],
+        "center": [
+          -74.4326,
+          40.5208
+        ],
         "zoom": 19.1,
         "speed": 0.65
       },
