@@ -3,37 +3,37 @@ import type { LotMapBinding } from "./types";
 // Expand this registry as new lot overlays are added to public/map/data/lots.
 export const lotMapBindings: LotMapBinding[] = [
   {
-    lotId: "lot-busch-stadium-west",
+    lotId: "stadium_west",
     mapLotId: "stadium-west",
     status: "ready",
   },
   {
-    lotId: "lot-liv-yellow",
+    lotId: "yellow_lot",
     mapLotId: "yellowlot",
     status: "ready",
   },
   {
-    lotId: "lot-liv-green",
+    lotId: "green_lot",
     mapLotId: "greenlot",
     status: "ready",
   },
   {
-    lotId: "lot-liv-105",
+    lotId: "lot_105",
     mapLotId: "lot105",
     status: "ready",
   },
   {
-    lotId: "lot-liv-101",
+    lotId: "lot_101",
     mapLotId: "lot101",
     status: "ready",
   },
   {
-    lotId: "lot-liv-102",
+    lotId: "lot_102",
     mapLotId: "lot102",
     status: "ready",
   },
   {
-    lotId: "lot-liv-103",
+    lotId: "lot_103",
     mapLotId: "lot103",
     status: "ready",
   },

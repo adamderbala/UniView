@@ -1,13 +1,13 @@
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import type { OccupancyTrend } from "../types/parking";
+import type { OccupancyPoint } from "../types/parking";
 
 interface OccupancyChartProps {
-  data: OccupancyTrend[];
+  data: OccupancyPoint[];
   title?: string;
 }
 
-export function OccupancyChart({ data, title = "Today's Occupancy Trend" }: OccupancyChartProps) {
+export function OccupancyChart({ data, title = "Current Occupancy by Lot" }: OccupancyChartProps) {
   return (
     <Card>
       <CardHeader>
@@ -18,7 +18,7 @@ export function OccupancyChart({ data, title = "Today's Occupancy Trend" }: Occu
           <LineChart data={data}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
             <XAxis 
-              dataKey="time" 
+              dataKey="label" 
               tick={{ fontSize: 12 }}
               className="text-muted-foreground"
             />

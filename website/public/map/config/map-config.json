@@ -79,7 +79,7 @@
       "id": "stadium-west",
       "name": "Stadium West Lot",
       "campusId": "busch",
-      "appLotId": "lot-busch-stadium-west",
+      "appLotId": "stadium_west",
       "previewPoint": [
         -74.4678,
         40.5139
@@ -107,7 +107,7 @@
       "id": "yellowlot",
       "name": "Yellow Lot",
       "campusId": "livingston",
-      "appLotId": "lot-liv-yellow",
+      "appLotId": "yellow_lot",
       "previewPoint": [
         -74.43835,
         40.52895
@@ -148,7 +148,7 @@
       "id": "greenlot",
       "name": "Green Lot",
       "campusId": "livingston",
-      "appLotId": "lot-liv-green",
+      "appLotId": "green_lot",
       "previewPoint": [
         -74.4399,
         40.5267
@@ -176,7 +176,7 @@
       "id": "lot105",
       "name": "Lot 105",
       "campusId": "livingston",
-      "appLotId": "lot-liv-105",
+      "appLotId": "lot_105",
       "previewPoint": [
         -74.4339,
         40.5246
@@ -204,7 +204,7 @@
       "id": "lot101",
       "name": "Lot 101",
       "campusId": "livingston",
-      "appLotId": "lot-liv-101",
+      "appLotId": "lot_101",
       "previewPoint": [
         -74.4378,
         40.5213
@@ -245,7 +245,7 @@
       "id": "lot102",
       "name": "Lot 102",
       "campusId": "livingston",
-      "appLotId": "lot-liv-102",
+      "appLotId": "lot_102",
       "previewPoint": [
         -74.4361,
         40.5214
@@ -273,7 +273,7 @@
       "id": "lot103",
       "name": "Lot 103",
       "campusId": "livingston",
-      "appLotId": "lot-liv-103",
+      "appLotId": "lot_103",
       "previewPoint": [
         -74.4326,
         40.5208

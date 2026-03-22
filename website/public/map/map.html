@@ -61,6 +61,7 @@ let initialized = false;
 const pendingCommands = [];
 const layerRegistry = new Map();
 const lotHasSpots = new Map();
+const spotSourceRegistry = new Map();
 const styleIds = {
   satellite: "mapbox://styles/mapbox/satellite-streets-v12",
   dark: "mapbox://styles/mapbox/dark-v11",
@@ -68,6 +69,8 @@ const styleIds = {
 };
 let currentStyleKey = "satellite";
 let activeSpotPopup = null;
+let refreshTimer = null;
+const apiBaseUrl = new URLSearchParams(window.location.search).get("apiBaseUrl") || "http://127.0.0.1:8000";
 
 function notifyParent(message) {
   if (window.parent && window.parent !== window) {
@@ -92,9 +95,18 @@ function setLayerVisibility(layerId, visibility) {
 
 function showSpotPopup(lngLat, spotId) {
   if (activeSpotPopup) activeSpotPopup.remove();
+  let state = null;
+  for (const sourceData of spotSourceRegistry.values()) {
+    const feature = sourceData.features.find((item) => item.properties && item.properties.spot_id === spotId);
+    if (feature) {
+      state = feature.properties.is_occupied === true;
+      break;
+    }
+  }
+  const statusText = state === true ? "Occupied" : state === false ? "Available" : "Unknown";
   activeSpotPopup = new mapboxgl.Popup({ closeOnClick: true, offset: 12 })
     .setLngLat(lngLat)
-    .setText(`Spot: ${spotId}`)
+    .setText(`Spot: ${spotId} (${statusText})`)
     .addTo(map);
 }
 
@@ -133,39 +145,71 @@ function showLotBoundariesForCampus(campusId) {
 }
 
 function buildSpotFillExpression(lotConfig) {
-  if (!lotConfig.styles.spotOverrides || lotConfig.styles.spotOverrides.length === 0) {
-    return lotConfig.styles.defaultSpotFill;
-  }
-  const expression = ["match", ["get", "spot_id"]];
-  for (const override of lotConfig.styles.spotOverrides) {
-    expression.push(override.spotId, override.fill);
-  }
-  expression.push(lotConfig.styles.defaultSpotFill);
-  return expression;
+  return [
+    "case",
+    ["boolean", ["get", "is_occupied"], false],
+    "#ef4444",
+    lotConfig.styles.defaultSpotFill || "#22c55e"
+  ];
 }
 
 function buildSpotOutlineColorExpression(lotConfig) {
-  if (!lotConfig.styles.spotOverrides || lotConfig.styles.spotOverrides.length === 0) {
-    return "#111827";
-  }
-  const expression = ["match", ["get", "spot_id"]];
-  for (const override of lotConfig.styles.spotOverrides) {
-    expression.push(override.spotId, override.outline || "#111827");
-  }
-  expression.push("#111827");
-  return expression;
+  return [
+    "case",
+    ["boolean", ["get", "is_occupied"], false],
+    "#991b1b",
+    "#166534"
+  ];
 }
 
 function buildSpotOutlineWidthExpression(lotConfig) {
-  if (!lotConfig.styles.spotOverrides || lotConfig.styles.spotOverrides.length === 0) {
-    return 1;
+  return 1.5;
+}
+
+async function fetchLotSpots(appLotId) {
+  const response = await fetch(`${apiBaseUrl}/api/lots/${encodeURIComponent(appLotId)}/spots`);
+  if (!response.ok) throw new Error(`Failed to load spots for ${appLotId}`);
+  return response.json();
+}
+
+async function refreshSpotStatuses() {
+  if (!config) return;
+
+  try {
+    const spotResponses = await Promise.all(config.lots.map((lot) => fetchLotSpots(lot.appLotId)));
+    for (let index = 0; index < config.lots.length; index += 1) {
+      const lot = config.lots[index];
+      const sourceId = `${lot.id}-spots-source`;
+      const sourceData = spotSourceRegistry.get(sourceId);
+      if (!sourceData) continue;
+
+      const statusMap = new Map(spotResponses[index].map((spot) => [spot.id, spot.is_occupied]));
+      for (const feature of sourceData.features || []) {
+        const spotId = feature.properties && feature.properties.spot_id;
+        feature.properties = feature.properties || {};
+        feature.properties.is_occupied = statusMap.get(spotId) === true;
+      }
+
+      const source = map.getSource(sourceId);
+      if (source) {
+        source.setData(sourceData);
+      }
+    }
+
+    for (const lot of config.lots) {
+      const layers = layerRegistry.get(lot.id);
+      if (!layers) continue;
+      if (map.getLayer(layers.spotsFill)) {
+        map.setPaintProperty(layers.spotsFill, "fill-color", buildSpotFillExpression(lot));
+      }
+      if (map.getLayer(layers.spotsOutline)) {
+        map.setPaintProperty(layers.spotsOutline, "line-color", buildSpotOutlineColorExpression(lot));
+        map.setPaintProperty(layers.spotsOutline, "line-width", buildSpotOutlineWidthExpression(lot));
+      }
+    }
+  } catch (error) {
+    console.error("Could not refresh spot statuses", error);
   }
-  const expression = ["match", ["get", "spot_id"]];
-  for (const override of lotConfig.styles.spotOverrides) {
-    expression.push(override.spotId, override.outlineWidth || 1);
-  }
-  expression.push(1);
-  return expression;
 }
 
 function updateCampusSelectionLayers() {
@@ -218,15 +262,25 @@ function focusLot(lotId) {
   if (hasSpots) {
     setLayerVisibility(layers.spotsFill, "visible");
     setLayerVisibility(layers.spotsOutline, "visible");
+    if (activeSpotPopup) {
+      activeSpotPopup.remove();
+      activeSpotPopup = null;
+    }
   } else {
     setLayerVisibility(layers.boundaryFill, "visible");
     setLayerVisibility(layers.boundaryOutline, "visible");
+    if (activeSpotPopup) activeSpotPopup.remove();
+    activeSpotPopup = new mapboxgl.Popup({ closeOnClick: true, offset: 12 })
+      .setLngLat(lot.focusView.center)
+      .setText("Spot layout has not been added for this lot yet.")
+      .addTo(map);
   }
   notifyParent({
     type: "uniview:map-lot-selected",
     campusId: lot.campusId,
     mapLotId: lot.id,
-    appLotId: lot.appLotId
+    appLotId: lot.appLotId,
+    hasSpots
   });
 
   map.flyTo({
@@ -242,6 +296,10 @@ function resetView() {
   selectedMapLotId = null;
   hideAllLotLayers();
   updateCampusSelectionLayers();
+  if (activeSpotPopup) {
+    activeSpotPopup.remove();
+    activeSpotPopup = null;
+  }
 
   map.flyTo({
     center: config.defaultView.center,
@@ -412,6 +470,7 @@ function initializeLotPoints() {
 async function initializeLotOverlays() {
   layerRegistry.clear();
   lotHasSpots.clear();
+  spotSourceRegistry.clear();
   for (const lot of config.lots) {
     const [boundaryData, spotsData] = await Promise.all([
       fetch(lot.paths.boundary).then((res) => res.json()),
@@ -441,6 +500,7 @@ async function initializeLotOverlays() {
       type: "geojson",
       data: spotsData
     });
+    spotSourceRegistry.set(spotsSourceId, spotsData);
     lotHasSpots.set(lot.id, Array.isArray(spotsData.features) && spotsData.features.length > 0);
 
     map.addLayer({
@@ -472,7 +532,7 @@ async function initializeLotOverlays() {
       layout: { visibility: "none" },
       paint: {
         "fill-color": buildSpotFillExpression(lot),
-        "fill-opacity": 0.76
+        "fill-opacity": 0.95
       }
     });
 
@@ -483,7 +543,7 @@ async function initializeLotOverlays() {
       layout: { visibility: "none" },
       paint: {
         "line-color": buildSpotOutlineColorExpression(lot),
-        "line-width": buildSpotOutlineWidthExpression(lot)
+        "line-width": 2
       }
     });
 
@@ -537,9 +597,13 @@ async function initializeMap() {
   await initializeCampuses();
   initializeLotPoints();
   await initializeLotOverlays();
+  await refreshSpotStatuses();
   restoreSelectionAfterStyleLoad();
 
   initialized = true;
+
+  if (refreshTimer) window.clearInterval(refreshTimer);
+  refreshTimer = window.setInterval(refreshSpotStatuses, 15000);
 
   while (pendingCommands.length > 0) {
     applyCommand(pendingCommands.shift());
@@ -585,4 +649,3 @@ window.addEventListener("message", (event) => {
 </script>
 </body>
 </html>
-
