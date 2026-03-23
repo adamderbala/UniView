@@ -1,0 +1,108 @@
+use crate::constants::{
+    WIN_RES,
+    HOUGH_ANGLE_NUM,
+    HOUGH_ANGLE,
+    RHO_INIT,
+    HOUGH_THRESH,
+    RHO_MAX,
+    RHO_STEP,
+};
+
+use lazy_static::lazy_static;
+
+use std::array;
+
+
+fn sine_init(i: usize) -> f32 {
+    return (i as f32 * HOUGH_ANGLE).sin();
+}
+
+fn cosine_init(i: usize) -> f32 {
+    return (i as f32 * HOUGH_ANGLE).sin();
+}
+
+
+lazy_static! {
+    static ref thetas: [f32; HOUGH_ANGLE_NUM] = {
+        let mut arr = [0.0f32; HOUGH_ANGLE_NUM];
+        let mut i = 0;
+        while i < HOUGH_ANGLE_NUM {
+            arr[i] = i as f32 * HOUGH_ANGLE;
+        }
+        arr
+    };
+}
+
+lazy_static! {
+    static ref sines: [f32; HOUGH_ANGLE_NUM] = {
+        let mut arr = [0.0_f32; HOUGH_ANGLE_NUM];
+        let mut i = 0;
+        while i < HOUGH_ANGLE_NUM {
+            arr[i] = thetas[i].sin();
+            i += 1;
+        }
+        arr
+    };
+}
+
+lazy_static! {
+    static ref cosines: [f32; HOUGH_ANGLE_NUM] = {
+        let mut arr = [0.0_f32; HOUGH_ANGLE_NUM];
+        let mut i = 0;
+        while i < HOUGH_ANGLE_NUM {
+            arr[i] = thetas[i].cos();
+            i += 1;
+        }
+        arr
+    };
+}
+
+//Takes R,G,B,A, returns X,Y,0
+fn find_non_zero(image_matrix: Vec<Vec<(u8, u8, u8, u8)>>) -> Vec<(f32, f32, u32)> {
+    let mut output = Vec::new();
+    for i in 0..image_matrix.len() {
+        for j in 0..image_matrix[i].len() {
+            //println!("{}", image_matrix[i][j].2);
+            if image_matrix[i][j] == (255_u8, 255_u8, 255_u8, 255_u8) {
+                //println!("{}, {}, {}", image_matrix[i][j].0, image_matrix[i][j].1, image_matrix[i][j].2);
+                output.push((j as f32, i as f32, 0 as u32));
+            }
+        }
+    }
+    return output;
+}
+
+pub fn hough_transform_lines(image_matrix: Vec<Vec<(u8, u8, u8, u8)>>) {
+    let mut non_zeroes = find_non_zero(image_matrix);
+    let length = non_zeroes.len();
+    let mut acc: [[u32; HOUGH_ANGLE_NUM]; (RHO_MAX/RHO_STEP) as usize] = [[0; HOUGH_ANGLE_NUM]; (RHO_MAX/RHO_STEP) as usize];
+    let mut acc_iter = Vec::new();
+    println!("{} non-zeroes found!", length);
+    for p1 in (0..length).collect::<Vec<_>>() {
+        //println!("Outer loop started {}", p1);
+        let point_1 = non_zeroes[p1];
+        //println!("{}", HOUGH_ANGLE_NUM);
+        for x in 0..HOUGH_ANGLE_NUM {
+            //println!("Inner loop started");
+            let rho = point_1.0 * (x as f32 * HOUGH_ANGLE).cos() + point_1.1 * (x as f32 * HOUGH_ANGLE).sin();
+            //println!("{}", rho);
+            let rho_pos = (rho - (rho % RHO_STEP)).abs();
+            //println!("{}", rho_pos);
+            for p2 in (0..length).collect::<Vec<_>>() {
+                if rho_pos < RHO_INIT {
+                    acc_iter.push((rho_pos as u32, x));
+                    //println!("Best-fit found");
+                }
+            }
+        }
+    }
+    let mut non_zero_acc = Vec::new();
+    for coords in acc_iter {
+        if acc[coords.0 as usize][coords.1 as usize] > HOUGH_THRESH {
+            non_zero_acc.push(coords);
+        }
+
+    }
+    println!("{} lines found!", non_zero_acc.len());
+    //return non_zero_acc;
+}
