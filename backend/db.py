@@ -128,6 +128,7 @@ SEED_CAMPUSES = [
 ]
 
 SEED_LOTS = [
+    {"id": "core_building", "campus_id": "busch", "name": "CoRE Building", "total_spaces": 8},
     {"id": "stadium_west", "campus_id": "busch", "name": "Stadium West Lot", "total_spaces": 520},
     {"id": "lot_30", "campus_id": "college-ave", "name": "Lot 30", "total_spaces": 320},
     {"id": "lot_42", "campus_id": "college-ave", "name": "Lot 42", "total_spaces": 420},
@@ -142,6 +143,7 @@ SEED_LOTS = [
 ]
 
 SPOT_FILES = {
+    "core_building": "demo-spots.geojson",
     "stadium_west": "stadium-west-spots.geojson",
     "yellow_lot": "yellowlot-spots.geojson",
     "green_lot": "greenlot-spots.geojson",
@@ -172,17 +174,20 @@ def load_seed_spots() -> list[ParkingSpot]:
 
 
 def seed_database(db: Session) -> None:
-    if db.scalar(select(University.id).limit(1)):
-        return
-
-    db.add_all(University(**item) for item in SEED_UNIVERSITIES)
-    db.commit()
-    db.add_all(Campus(**item) for item in SEED_CAMPUSES)
+    existing_university_ids = set(db.scalars(select(University.id)).all())
+    db.add_all(University(**item) for item in SEED_UNIVERSITIES if item["id"] not in existing_university_ids)
     db.commit()
 
-    db.add_all(ParkingLot(**item) for item in SEED_LOTS)
+    existing_campus_ids = set(db.scalars(select(Campus.id)).all())
+    db.add_all(Campus(**item) for item in SEED_CAMPUSES if item["id"] not in existing_campus_ids)
     db.commit()
-    db.add_all(load_seed_spots())
+
+    existing_lot_ids = set(db.scalars(select(ParkingLot.id)).all())
+    db.add_all(ParkingLot(**item) for item in SEED_LOTS if item["id"] not in existing_lot_ids)
+    db.commit()
+
+    existing_spot_ids = set(db.scalars(select(ParkingSpot.id)).all())
+    db.add_all(spot for spot in load_seed_spots() if spot.id not in existing_spot_ids)
     db.commit()
 
 

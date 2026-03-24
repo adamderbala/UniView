@@ -76,6 +76,34 @@
   ],
   "lots": [
     {
+      "id": "demo-spots",
+      "name": "CoRE Building",
+      "campusId": "busch",
+      "appLotId": "core_building",
+      "previewPoint": [
+        -74.461421,
+        40.521437
+      ],
+      "focusView": {
+        "center": [
+          -74.461421,
+          40.521437
+        ],
+        "zoom": 19.9,
+        "speed": 0.65
+      },
+      "paths": {
+        "boundary": "./data/lots/core-building-boundary.geojson",
+        "spots": "./data/lots/demo-spots.geojson"
+      },
+      "styles": {
+        "boundaryFill": "#14b8a6",
+        "boundaryOutline": "#0f766e",
+        "defaultSpotFill": "#10b981",
+        "spotOverrides": []
+      }
+    },
+    {
       "id": "stadium-west",
       "name": "Stadium West Lot",
       "campusId": "busch",
