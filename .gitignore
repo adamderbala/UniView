@@ -141,3 +141,7 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+target/
+edgeNode/parking-camera/target/
+target/
+edgeNode/parking-camera/target/
