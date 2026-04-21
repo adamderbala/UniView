@@ -44,6 +44,9 @@ export function getUniversities(): Promise<University[]> {
     items.map((item) => ({
       id: item.id,
       name: item.name,
+      shortName: item.name,
+      totalLots: 0,
+      totalSpaces: 0,
     })),
   );
 }
@@ -67,10 +70,12 @@ export function getLots(campusId?: string): Promise<ParkingLot[]> {
       id: item.id,
       campusId: item.campus_id,
       name: item.name,
+      location: item.name,
       totalSpaces: item.total_spaces,
-      occupiedSpaces: item.occupied_spaces,
       availableSpaces: item.available_spaces,
-      lastUpdated: item.last_updated,
+      coordinates: { lat: 0, lng: 0 },
+      permitTypes: [],
+      lastUpdated: new Date(item.last_updated),
     })),
   );
 }
