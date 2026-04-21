@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+import json
+import os
+from urllib import error, request
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterable
+
+
+DEMO_LOT_ID = "lot-liv-yellow"
+DEMO_MAP_LOT_ID = "yellowlot"
+DEMO_SPOT_IDS = [f"yellowlot_spot_{index}" for index in range(1, 9)]
+DEMO_OUTPUT_PATH = Path(__file__).resolve().parent / "website" / "public" / "demo" / "occupancy.json"
+DEMO_API_BASE_URL = os.getenv("DEMO_API_BASE_URL", "http://127.0.0.1:8000")
+
+
+def build_demo_payload(occupancy: Iterable[int | bool]) -> dict[str, object]:
+    states = [bool(value) for value in occupancy]
+    if len(states) != len(DEMO_SPOT_IDS):
+        raise ValueError(f"Expected {len(DEMO_SPOT_IDS)} demo spot states, got {len(states)}")
+
+    available_spaces = sum(1 for state in states if not state)
+    updated_at = datetime.now(timezone.utc).isoformat()
+
+    return {
+        "updatedAt": updated_at,
+        "lots": {
+            DEMO_LOT_ID: {
+                "mapLotId": DEMO_MAP_LOT_ID,
+                "totalSpaces": len(DEMO_SPOT_IDS),
+                "availableSpaces": available_spaces,
+                "spots": [
+                    {
+                        "spotId": spot_id,
+                        "isOccupied": is_occupied,
+                    }
+                    for spot_id, is_occupied in zip(DEMO_SPOT_IDS, states, strict=True)
+                ],
+            }
+        },
+    }
+
+
+def write_demo_payload(occupancy: Iterable[int | bool]) -> Path:
+    payload = build_demo_payload(occupancy)
+    DEMO_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DEMO_OUTPUT_PATH.write_text(json.dumps(payload, indent=2))
+    return DEMO_OUTPUT_PATH
+
+
+def post_demo_payload(occupancy: Iterable[int | bool], *, device_id: str = "edge-yellow-demo-01", api_base_url: str | None = None) -> dict[str, object]:
+    payload = build_demo_payload(occupancy)
+    lot_payload = payload["lots"][DEMO_LOT_ID]
+    ingest_payload = {
+        "deviceId": device_id,
+        "observedAt": payload["updatedAt"],
+        "lot": {
+            "lotId": DEMO_LOT_ID,
+            "mapLotId": lot_payload["mapLotId"],
+            "spots": lot_payload["spots"],
+        },
+    }
+
+    base_url = (api_base_url or DEMO_API_BASE_URL).rstrip("/")
+    http_request = request.Request(
+        f"{base_url}/api/demo/ingest",
+        data=json.dumps(ingest_payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with request.urlopen(http_request, timeout=5) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def publish_demo_payload(
+    occupancy: Iterable[int | bool],
+    *,
+    device_id: str = "edge-yellow-demo-01",
+    api_base_url: str | None = None,
+    write_local_backup: bool = True,
+) -> None:
+    if write_local_backup:
+        write_demo_payload(occupancy)
+
+    try:
+        post_demo_payload(occupancy, device_id=device_id, api_base_url=api_base_url)
+    except error.URLError as request_error:
+        raise RuntimeError(f"Could not reach demo backend: {request_error}") from request_error

@@ -4,7 +4,6 @@ import {
   mockParkingLots,
   rutgersCampuses,
   generateOccupancyTrend,
-  getCampusStats,
   getLotOccupancyPercentage,
 } from "./utils/mockData";
 import type { UserPreferences } from "./types/parking";
@@ -57,8 +56,23 @@ const navItems: { key: ViewMode; label: string; icon: typeof Map }[] = [
   { key: "settings", label: "Settings", icon: Settings },
 ];
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+const DEMO_OCCUPANCY_URL = `${API_BASE_URL}/api/demo/occupancy`;
+const DEMO_LOT_ID = "lot-liv-yellow";
+const MAP_SRC = `/map/map.html?apiBaseUrl=${encodeURIComponent(API_BASE_URL)}`;
+
+interface DemoLotOccupancy {
+  totalSpaces: number;
+  availableSpaces: number;
+}
+
+interface DemoOccupancyResponse {
+  lots?: Record<string, DemoLotOccupancy>;
+}
+
 export default function App() {
   const [activeView, setActiveView] = useState<ViewMode>("map");
+  const [parkingLots, setParkingLots] = useState(mockParkingLots);
   const [selectedUniversity, setSelectedUniversity] = useState<string>(mockUniversities[0].id);
   const [selectedCampus, setSelectedCampus] = useState<string | null>(null);
   const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
@@ -81,15 +95,15 @@ export default function App() {
   );
 
   const campusLots = useMemo(
-    () => (selectedCampus ? mockParkingLots.filter((lot) => lot.campusId === selectedCampus) : []),
-    [selectedCampus],
+    () => (selectedCampus ? parkingLots.filter((lot) => lot.campusId === selectedCampus) : []),
+    [parkingLots, selectedCampus],
   );
 
   const scopedLots = useMemo(() => {
     if (selectedCampus) return campusLots;
     const campusIds = new Set(filteredCampuses.map((campus) => campus.id));
-    return mockParkingLots.filter((lot) => campusIds.has(lot.campusId));
-  }, [selectedCampus, campusLots, filteredCampuses]);
+    return parkingLots.filter((lot) => campusIds.has(lot.campusId));
+  }, [selectedCampus, campusLots, filteredCampuses, parkingLots]);
 
   const filteredLots = useMemo(() => {
     const savedSet = new Set(preferences.savedLots);
@@ -111,11 +125,9 @@ export default function App() {
 
   const selectedCampusName = filteredCampuses.find((campus) => campus.id === selectedCampus)?.name;
   const currentUniversity = mockUniversities.find((university) => university.id === selectedUniversity);
-  const selectedLot = mockParkingLots.find((lot) => lot.id === selectedLotId) ?? null;
+  const selectedLot = parkingLots.find((lot) => lot.id === selectedLotId) ?? null;
 
   const scopedStats = useMemo(() => {
-    if (selectedCampus) return getCampusStats(selectedCampus);
-
     const totalSpaces = scopedLots.reduce((sum, lot) => sum + lot.totalSpaces, 0);
     const availableSpaces = scopedLots.reduce((sum, lot) => sum + lot.availableSpaces, 0);
 
@@ -125,7 +137,7 @@ export default function App() {
       availableSpaces,
       occupancyPercentage: totalSpaces > 0 ? Math.round(((totalSpaces - availableSpaces) / totalSpaces) * 100) : 0,
     };
-  }, [selectedCampus, scopedLots]);
+  }, [scopedLots]);
 
   const savedCount = scopedLots.filter((lot) => preferences.savedLots.includes(lot.id)).length;
 
@@ -139,6 +151,44 @@ export default function App() {
     }, 30000);
 
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDemoOccupancy() {
+      try {
+        const response = await fetch(DEMO_OCCUPANCY_URL, { cache: "no-store" });
+        if (!response.ok) return;
+
+        const data = (await response.json()) as DemoOccupancyResponse;
+        const yellowLot = data.lots?.[DEMO_LOT_ID];
+        if (!yellowLot || cancelled) return;
+
+        setParkingLots((currentLots) =>
+          currentLots.map((lot) =>
+            lot.id === DEMO_LOT_ID
+              ? {
+                  ...lot,
+                  totalSpaces: yellowLot.totalSpaces,
+                  availableSpaces: yellowLot.availableSpaces,
+                  lastUpdated: new Date(),
+                }
+              : lot,
+          ),
+        );
+      } catch (error) {
+        console.error("Could not load demo occupancy data", error);
+      }
+    }
+
+    loadDemoOccupancy();
+    const interval = window.setInterval(loadDemoOccupancy, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
@@ -188,14 +238,16 @@ export default function App() {
     } else {
       sendMapCommand({ type: "uniview:reset-view" });
     }
+  }, [selectedCampus]);
 
+  useEffect(() => {
     if (selectedLotId) {
-      const lot = mockParkingLots.find((candidate) => candidate.id === selectedLotId);
+      const lot = parkingLots.find((candidate) => candidate.id === selectedLotId);
       if (!lot || lot.campusId !== selectedCampus) {
         setSelectedLotId(null);
       }
     }
-  }, [selectedCampus]);
+  }, [parkingLots, selectedCampus, selectedLotId]);
 
   const handleToggleSave = (lotId: string) => {
     const isSaved = preferences.savedLots.includes(lotId);
@@ -503,7 +555,7 @@ export default function App() {
               <iframe
                 ref={mapFrameRef}
                 title="UniView parking map"
-                src="/map/map.html"
+                src={MAP_SRC}
                 className="h-full w-full border-0"
               />
               <div className="hidden md:block absolute left-4 top-4 bottom-4 w-[390px] min-w-[340px] max-w-[420px]">

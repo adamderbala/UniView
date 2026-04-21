@@ -61,6 +61,7 @@ let initialized = false;
 const pendingCommands = [];
 const layerRegistry = new Map();
 const lotHasSpots = new Map();
+const spotSourceRegistry = new Map();
 const styleIds = {
   satellite: "mapbox://styles/mapbox/satellite-streets-v12",
   dark: "mapbox://styles/mapbox/dark-v11",
@@ -68,6 +69,9 @@ const styleIds = {
 };
 let currentStyleKey = "satellite";
 let activeSpotPopup = null;
+let refreshTimer = null;
+const apiBaseUrl = new URLSearchParams(window.location.search).get("apiBaseUrl") || "http://127.0.0.1:8000";
+const demoOccupancyUrl = `${apiBaseUrl}/api/demo/occupancy`;
 
 function notifyParent(message) {
   if (window.parent && window.parent !== window) {
@@ -92,9 +96,18 @@ function setLayerVisibility(layerId, visibility) {
 
 function showSpotPopup(lngLat, spotId) {
   if (activeSpotPopup) activeSpotPopup.remove();
+  let isOccupied = null;
+  for (const sourceData of spotSourceRegistry.values()) {
+    const feature = sourceData.features.find((item) => item.properties && item.properties.spot_id === spotId);
+    if (feature) {
+      isOccupied = feature.properties.is_occupied === true;
+      break;
+    }
+  }
+  const statusText = isOccupied === null ? "Unknown" : isOccupied ? "Occupied" : "Available";
   activeSpotPopup = new mapboxgl.Popup({ closeOnClick: true, offset: 12 })
     .setLngLat(lngLat)
-    .setText(`Spot: ${spotId}`)
+    .setText(`Spot: ${spotId} (${statusText})`)
     .addTo(map);
 }
 
@@ -133,26 +146,40 @@ function showLotBoundariesForCampus(campusId) {
 }
 
 function buildSpotFillExpression(lotConfig) {
-  if (!lotConfig.styles.spotOverrides || lotConfig.styles.spotOverrides.length === 0) {
-    return lotConfig.styles.defaultSpotFill;
-  }
-  const expression = ["match", ["get", "spot_id"]];
-  for (const override of lotConfig.styles.spotOverrides) {
-    expression.push(override.spotId, override.fill);
+  const expression = [
+    "case",
+    ["boolean", ["get", "is_occupied"], false],
+    "#ef4444",
+  ];
+  if (lotConfig.styles.spotOverrides && lotConfig.styles.spotOverrides.length > 0) {
+    const overrideExpression = ["match", ["get", "spot_id"]];
+    for (const override of lotConfig.styles.spotOverrides) {
+      overrideExpression.push(override.spotId, override.fill);
+    }
+    overrideExpression.push(lotConfig.styles.defaultSpotFill);
+    expression.push(overrideExpression);
+    return expression;
   }
   expression.push(lotConfig.styles.defaultSpotFill);
   return expression;
 }
 
 function buildSpotOutlineColorExpression(lotConfig) {
-  if (!lotConfig.styles.spotOverrides || lotConfig.styles.spotOverrides.length === 0) {
-    return "#111827";
+  const expression = [
+    "case",
+    ["boolean", ["get", "is_occupied"], false],
+    "#991b1b",
+  ];
+  if (lotConfig.styles.spotOverrides && lotConfig.styles.spotOverrides.length > 0) {
+    const overrideExpression = ["match", ["get", "spot_id"]];
+    for (const override of lotConfig.styles.spotOverrides) {
+      overrideExpression.push(override.spotId, override.outline || "#111827");
+    }
+    overrideExpression.push("#111827");
+    expression.push(overrideExpression);
+    return expression;
   }
-  const expression = ["match", ["get", "spot_id"]];
-  for (const override of lotConfig.styles.spotOverrides) {
-    expression.push(override.spotId, override.outline || "#111827");
-  }
-  expression.push("#111827");
+  expression.push("#166534");
   return expression;
 }
 
@@ -166,6 +193,37 @@ function buildSpotOutlineWidthExpression(lotConfig) {
   }
   expression.push(1);
   return expression;
+}
+
+async function refreshSpotStatuses() {
+  try {
+    const response = await fetch(`${demoOccupancyUrl}?t=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) return;
+
+    const payload = await response.json();
+    if (!payload || !payload.lots) return;
+
+    for (const lot of config.lots) {
+      const liveLot = payload.lots[lot.appLotId];
+      const sourceId = `${lot.id}-spots-source`;
+      const sourceData = spotSourceRegistry.get(sourceId);
+      if (!liveLot || !sourceData) continue;
+
+      const statusMap = new Map((liveLot.spots || []).map((spot) => [spot.spotId, spot.isOccupied === true]));
+      for (const feature of sourceData.features || []) {
+        const spotId = feature.properties && feature.properties.spot_id;
+        feature.properties = feature.properties || {};
+        feature.properties.is_occupied = statusMap.get(spotId) === true;
+      }
+
+      const source = map.getSource(sourceId);
+      if (source) {
+        source.setData(sourceData);
+      }
+    }
+  } catch (error) {
+    console.error("Could not refresh demo spot statuses", error);
+  }
 }
 
 function updateCampusSelectionLayers() {
@@ -412,6 +470,7 @@ function initializeLotPoints() {
 async function initializeLotOverlays() {
   layerRegistry.clear();
   lotHasSpots.clear();
+  spotSourceRegistry.clear();
   for (const lot of config.lots) {
     const [boundaryData, spotsData] = await Promise.all([
       fetch(lot.paths.boundary).then((res) => res.json()),
@@ -441,6 +500,7 @@ async function initializeLotOverlays() {
       type: "geojson",
       data: spotsData
     });
+    spotSourceRegistry.set(spotsSourceId, spotsData);
     lotHasSpots.set(lot.id, Array.isArray(spotsData.features) && spotsData.features.length > 0);
 
     map.addLayer({
@@ -506,6 +566,7 @@ async function initializeLotOverlays() {
       showSpotPopup(event.lngLat, spotId);
     });
   }
+  await refreshSpotStatuses();
 }
 
 function applyCommand(command) {
@@ -537,6 +598,10 @@ async function initializeMap() {
   await initializeCampuses();
   initializeLotPoints();
   await initializeLotOverlays();
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+  }
+  refreshTimer = setInterval(refreshSpotStatuses, 2000);
   restoreSelectionAfterStyleLoad();
 
   initialized = true;
@@ -582,7 +647,12 @@ window.addEventListener("message", (event) => {
 
   applyCommand(event.data);
 });
+
+window.addEventListener("beforeunload", () => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+  }
+});
 </script>
 </body>
 </html>
-
