@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getCampuses, getLots, getUniversities } from "./api";
-import type { Campus, OccupancyPoint, ParkingLot, University, UserPreferences } from "./types/parking";
+import {
+  mockUniversities,
+  mockParkingLots,
+  rutgersCampuses,
+  generateOccupancyTrend,
+  getLotOccupancyPercentage,
+} from "./utils/mockData";
+import type { UserPreferences } from "./types/parking";
 import type { MapCommand } from "./map/types";
 import { getLotIdForMapLot, getMapBindingForLot } from "./map/lotRegistry";
 import { OccupancyChart } from "./components/OccupancyChart";
@@ -50,116 +56,62 @@ const navItems: { key: ViewMode; label: string; icon: typeof Map }[] = [
   { key: "settings", label: "Settings", icon: Settings },
 ];
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
-const mapSrc = `/map/map.html?apiBaseUrl=${encodeURIComponent(apiBaseUrl)}`;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+const DEMO_OCCUPANCY_URL = `${API_BASE_URL}/api/demo/occupancy`;
+const DEMO_LOT_ID = "lot-liv-yellow";
+const MAP_SRC = `/map/map.html?apiBaseUrl=${encodeURIComponent(API_BASE_URL)}`;
 
-function getLotOccupancyPercentage(lot: ParkingLot) {
-  if (lot.totalSpaces === 0) return 0;
-  return Math.round((lot.occupiedSpaces / lot.totalSpaces) * 100);
+interface DemoLotOccupancy {
+  totalSpaces: number;
+  availableSpaces: number;
+}
+
+interface DemoOccupancyResponse {
+  lots?: Record<string, DemoLotOccupancy>;
 }
 
 export default function App() {
   const [activeView, setActiveView] = useState<ViewMode>("map");
-  const [universities, setUniversities] = useState<University[]>([]);
-  const [campuses, setCampuses] = useState<Campus[]>([]);
-  const [lots, setLots] = useState<ParkingLot[]>([]);
-  const [selectedUniversity, setSelectedUniversity] = useState("rutgers");
+  const [parkingLots, setParkingLots] = useState(mockParkingLots);
+  const [selectedUniversity, setSelectedUniversity] = useState<string>(mockUniversities[0].id);
   const [selectedCampus, setSelectedCampus] = useState<string | null>(null);
   const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSavedOnly, setShowSavedOnly] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [preferences, setPreferences] = useState<UserPreferences>({
-    selectedUniversity: "rutgers",
+    selectedUniversity: mockUniversities[0].id,
     savedLots: [],
     notificationsEnabled: true,
     alertThreshold: 50,
   });
+  const [occupancyData, setOccupancyData] = useState(generateOccupancyTrend());
 
   const mapFrameRef = useRef<HTMLIFrameElement | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadInitialData() {
-      try {
-        setLoadError(null);
-        const [universityItems, campusItems, lotItems] = await Promise.all([
-          getUniversities(),
-          getCampuses(),
-          getLots(),
-        ]);
-
-        if (cancelled) return;
-
-        setUniversities(universityItems);
-        setCampuses(campusItems);
-        setLots(lotItems);
-
-        if (universityItems.length > 0 && !universityItems.some((item) => item.id === selectedUniversity)) {
-          setSelectedUniversity(universityItems[0].id);
-          setPreferences((prev) => ({ ...prev, selectedUniversity: universityItems[0].id }));
-        }
-      } catch (error) {
-        if (cancelled) return;
-        setLoadError(error instanceof Error ? error.message : "Failed to load parking data.");
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-
-    loadInitialData();
-    return () => {
-      cancelled = true;
-    };
-  }, [lots]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function refreshLots() {
-      try {
-        const lotItems = await getLots();
-        if (!cancelled) setLots(lotItems);
-      } catch {
-        if (!cancelled) {
-          toast.error("Could not refresh lot availability.");
-        }
-      }
-    }
-
-    const interval = window.setInterval(refreshLots, 30000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, []);
-
   const filteredCampuses = useMemo(
-    () => campuses.filter((campus) => campus.universityId === selectedUniversity),
-    [campuses, selectedUniversity],
+    () => rutgersCampuses.filter((campus) => campus.universityId === selectedUniversity),
+    [selectedUniversity],
   );
 
   const campusLots = useMemo(
-    () => (selectedCampus ? lots.filter((lot) => lot.campusId === selectedCampus) : []),
-    [lots, selectedCampus],
+    () => (selectedCampus ? parkingLots.filter((lot) => lot.campusId === selectedCampus) : []),
+    [parkingLots, selectedCampus],
   );
 
   const scopedLots = useMemo(() => {
     if (selectedCampus) return campusLots;
     const campusIds = new Set(filteredCampuses.map((campus) => campus.id));
-    return lots.filter((lot) => campusIds.has(lot.campusId));
-  }, [campusLots, filteredCampuses, lots, selectedCampus]);
+    return parkingLots.filter((lot) => campusIds.has(lot.campusId));
+  }, [selectedCampus, campusLots, filteredCampuses, parkingLots]);
 
   const filteredLots = useMemo(() => {
     const savedSet = new Set(preferences.savedLots);
     return campusLots
       .filter((lot) => {
-        const query = searchQuery.toLowerCase();
-        const campusName = filteredCampuses.find((campus) => campus.id === lot.campusId)?.name.toLowerCase() ?? "";
-        const matchesSearch = lot.name.toLowerCase().includes(query) || campusName.includes(query) || lot.id.toLowerCase().includes(query);
+        const matchesSearch =
+          lot.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          lot.location.toLowerCase().includes(searchQuery.toLowerCase());
         const matchesSaved = !showSavedOnly || savedSet.has(lot.id);
         return matchesSearch && matchesSaved;
       })
@@ -169,15 +121,16 @@ export default function App() {
         if (aSaved !== bSaved) return aSaved ? -1 : 1;
         return a.name.localeCompare(b.name);
       });
-  }, [campusLots, filteredCampuses, preferences.savedLots, searchQuery, showSavedOnly]);
+  }, [campusLots, searchQuery, showSavedOnly, preferences.savedLots]);
 
-  const currentUniversity = universities.find((university) => university.id === selectedUniversity) ?? null;
-  const selectedCampusName = filteredCampuses.find((campus) => campus.id === selectedCampus)?.name ?? null;
-  const selectedLot = lots.find((lot) => lot.id === selectedLotId) ?? null;
+  const selectedCampusName = filteredCampuses.find((campus) => campus.id === selectedCampus)?.name;
+  const currentUniversity = mockUniversities.find((university) => university.id === selectedUniversity);
+  const selectedLot = parkingLots.find((lot) => lot.id === selectedLotId) ?? null;
 
   const scopedStats = useMemo(() => {
     const totalSpaces = scopedLots.reduce((sum, lot) => sum + lot.totalSpaces, 0);
     const availableSpaces = scopedLots.reduce((sum, lot) => sum + lot.availableSpaces, 0);
+
     return {
       totalLots: scopedLots.length,
       totalSpaces,
@@ -186,20 +139,57 @@ export default function App() {
     };
   }, [scopedLots]);
 
-  const occupancyData = useMemo<OccupancyPoint[]>(
-    () =>
-      scopedLots.map((lot) => ({
-        label: lot.name,
-        occupancy: getLotOccupancyPercentage(lot),
-      })),
-    [scopedLots],
-  );
-
   const savedCount = scopedLots.filter((lot) => preferences.savedLots.includes(lot.id)).length;
 
+  const sendMapCommand = (command: MapCommand) => {
+    mapFrameRef.current?.contentWindow?.postMessage(command, window.location.origin);
+  };
+
   useEffect(() => {
-    setPreferences((prev) => ({ ...prev, selectedUniversity }));
-  }, [selectedUniversity]);
+    const interval = setInterval(() => {
+      setOccupancyData(generateOccupancyTrend());
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDemoOccupancy() {
+      try {
+        const response = await fetch(DEMO_OCCUPANCY_URL, { cache: "no-store" });
+        if (!response.ok) return;
+
+        const data = (await response.json()) as DemoOccupancyResponse;
+        const yellowLot = data.lots?.[DEMO_LOT_ID];
+        if (!yellowLot || cancelled) return;
+
+        setParkingLots((currentLots) =>
+          currentLots.map((lot) =>
+            lot.id === DEMO_LOT_ID
+              ? {
+                  ...lot,
+                  totalSpaces: yellowLot.totalSpaces,
+                  availableSpaces: yellowLot.availableSpaces,
+                  lastUpdated: new Date(),
+                }
+              : lot,
+          ),
+        );
+      } catch (error) {
+        console.error("Could not load demo occupancy data", error);
+      }
+    }
+
+    loadDemoOccupancy();
+    const interval = window.setInterval(loadDemoOccupancy, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     const handleMapMessage = (event: MessageEvent) => {
@@ -219,22 +209,20 @@ export default function App() {
             : typeof event.data.mapLotId === "string"
               ? getLotIdForMapLot(event.data.mapLotId) ?? null
               : null;
-        const hasSpots = event.data.hasSpots === true;
 
         if (campusId) setSelectedCampus(campusId);
         if (appLotIdFromMessage) setSelectedLotId(appLotIdFromMessage);
         setActiveView("map");
-
-        if (appLotIdFromMessage && !hasSpots) {
-          const lotName = lots.find((lot) => lot.id === appLotIdFromMessage)?.name ?? "This lot";
-          toast.info(`${lotName} does not have individual spot geometry yet.`);
-        }
       }
     };
 
     window.addEventListener("message", handleMapMessage);
     return () => window.removeEventListener("message", handleMapMessage);
   }, []);
+
+  useEffect(() => {
+    setPreferences((prev) => ({ ...prev, selectedUniversity }));
+  }, [selectedUniversity]);
 
   useEffect(() => {
     if (selectedCampus && !filteredCampuses.some((campus) => campus.id === selectedCampus)) {
@@ -245,25 +233,21 @@ export default function App() {
   }, [filteredCampuses, selectedCampus]);
 
   useEffect(() => {
-    if (selectedLotId) {
-      const lot = lots.find((candidate) => candidate.id === selectedLotId);
-      if (!lot || (selectedCampus && lot.campusId !== selectedCampus)) {
-        setSelectedLotId(null);
-      }
-    }
-  }, [lots, selectedCampus, selectedLotId]);
-
-  const sendMapCommand = (command: MapCommand) => {
-    mapFrameRef.current?.contentWindow?.postMessage(command, window.location.origin);
-  };
-
-  useEffect(() => {
     if (selectedCampus) {
       sendMapCommand({ type: "uniview:set-campus", campusId: selectedCampus });
     } else {
       sendMapCommand({ type: "uniview:reset-view" });
     }
   }, [selectedCampus]);
+
+  useEffect(() => {
+    if (selectedLotId) {
+      const lot = parkingLots.find((candidate) => candidate.id === selectedLotId);
+      if (!lot || lot.campusId !== selectedCampus) {
+        setSelectedLotId(null);
+      }
+    }
+  }, [parkingLots, selectedCampus, selectedLotId]);
 
   const handleToggleSave = (lotId: string) => {
     const isSaved = preferences.savedLots.includes(lotId);
@@ -296,26 +280,6 @@ export default function App() {
     sendMapCommand({ type: "uniview:reset-view" });
     toast.success("Map reset to campus overview.");
   };
-
-  if (isLoading) {
-    return <div className="h-screen grid place-items-center text-slate-600">Loading UniView...</div>;
-  }
-
-  if (loadError) {
-    return (
-      <div className="h-screen grid place-items-center p-6">
-        <Card className="max-w-lg">
-          <CardHeader>
-            <CardTitle>Could not load backend data</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-slate-600">{loadError}</p>
-            <Button onClick={() => window.location.reload()}>Try Again</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   const renderSidebar = (variant: "docked" | "floating" = "docked") => (
     <div
@@ -352,7 +316,7 @@ export default function App() {
               <SelectValue placeholder="Select university" />
             </SelectTrigger>
             <SelectContent>
-              {universities.map((university) => (
+              {mockUniversities.map((university) => (
                 <SelectItem key={university.id} value={university.id}>
                   {university.name}
                 </SelectItem>
@@ -388,8 +352,8 @@ export default function App() {
               }`}
             >
               <p className="font-semibold text-base">{campus.name}</p>
-              <p className="text-xs text-slate-500">{campus.lotCount} configured lots</p>
-            </button>
+                <p className="text-xs text-slate-500">{campus.lotCount} configured lots</p>
+              </button>
           ))}
         </div>
       </div>
@@ -458,7 +422,6 @@ export default function App() {
             const occupancy = getLotOccupancyPercentage(lot);
             const mapBinding = getMapBindingForLot(lot.id);
             const mapReady = mapBinding?.status === "ready";
-            const campusName = filteredCampuses.find((campus) => campus.id === lot.campusId)?.name ?? lot.campusId;
 
             return (
               <button
@@ -477,7 +440,7 @@ export default function App() {
                         {mapReady ? "Ready" : "Pending"}
                       </Badge>
                     </div>
-                    <p className="text-xs text-slate-500 truncate">{campusName}</p>
+                    <p className="text-xs text-slate-500 truncate">{lot.location}</p>
                   </div>
                   <Button
                     variant="ghost"
@@ -592,7 +555,7 @@ export default function App() {
               <iframe
                 ref={mapFrameRef}
                 title="UniView parking map"
-                src={mapSrc}
+                src={MAP_SRC}
                 className="h-full w-full border-0"
               />
               <div className="hidden md:block absolute left-4 top-4 bottom-4 w-[390px] min-w-[340px] max-w-[420px]">
@@ -658,7 +621,7 @@ export default function App() {
                 </Card>
               </div>
 
-              <OccupancyChart data={occupancyData} title={`${selectedCampusName ?? "University"} - Current Occupancy`} />
+              <OccupancyChart data={occupancyData} title={`${selectedCampusName ?? "University"} - Occupancy Trend`} />
 
               <Card>
                 <CardHeader>
@@ -669,7 +632,7 @@ export default function App() {
                     <div key={lot.id} className="flex items-center justify-between border rounded-lg px-3 py-2 bg-white">
                       <div>
                         <p className="font-medium">{lot.name}</p>
-                        <p className="text-xs text-slate-500">{lot.id}</p>
+                        <p className="text-xs text-slate-500">{lot.location}</p>
                       </div>
                       <Badge variant="secondary">{getLotOccupancyPercentage(lot)}% occupied</Badge>
                     </div>
