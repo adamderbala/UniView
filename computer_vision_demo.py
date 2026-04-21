@@ -1,5 +1,6 @@
 import numpy as np
 import cv2 as cv
+import os
 from time import sleep
 
 from demo_integration import publish_demo_payload
@@ -22,11 +23,21 @@ SPOT_MIN_WIDTH = 160
 SPOT_MIN_HEIGHT = 180
 CAR_MIN_WIDTH = 100
 CAR_MIN_HEIGHT = 100
+HEADLESS = not os.getenv("DISPLAY")
 
 #Camera initialization
 cap = cv.VideoCapture(CAMERA_ENUM)
 cap.set(cv.CAP_PROP_FRAME_WIDTH, WIDTH)
 cap.set(cv.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+
+
+def show_frame(window_name, frame):
+	if not HEADLESS:
+		cv.imshow(window_name, frame)
+
+
+def should_quit():
+	return (not HEADLESS) and cv.waitKey(1) == ord('q')
 
 #Bacground subtraction init
 MOG2 = cv.createBackgroundSubtractorMOG2()
@@ -64,8 +75,8 @@ while len(spots) != NUM_SPOTS:
 	#print(bound_area)
 	if len(bounds) < 3:
 		print("Could not find lot boundary yet. Reposition camera and keep the empty lot in frame.")
-		cv.imshow("Camera", frame_gray_blur)
-		if cv.waitKey(1) == ord('q'):
+		show_frame("Camera", frame_gray_blur)
+		if should_quit():
 			break
 		continue
 	cv.rectangle(frame_gray_blur, bounds[0], bounds[2], (255, 255, 255), THICKNESS)
@@ -92,8 +103,8 @@ while len(spots) != NUM_SPOTS:
 	spots = lot_spaces_post
 	spots_compare = lot_spaces_tmp
 	print(str(len(spots)) + " spots detected.")
-	cv.imshow("Camera", frame_gray_blur)
-	if cv.waitKey(1) == ord('q'):
+	show_frame("Camera", frame_gray_blur)
+	if should_quit():
 		break
 
 #Mainloop
@@ -129,9 +140,9 @@ while True:
 	except Exception as error:
 		print(f"Could not publish demo occupancy payload: {error}")
 	#cv.drawContours(lot_canny_close, spots, -1, (0, 0, 255), 3)
-	cv.imshow("Camera", lot_canny_close)
+	show_frame("Camera", lot_canny_close)
 
-	if cv.waitKey(1) == ord('q'):
+	if should_quit():
 		break
 
 
