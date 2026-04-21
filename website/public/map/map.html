@@ -71,7 +71,6 @@ let currentStyleKey = "satellite";
 let activeSpotPopup = null;
 let refreshTimer = null;
 const apiBaseUrl = new URLSearchParams(window.location.search).get("apiBaseUrl") || "http://127.0.0.1:8000";
-const demoOccupancyUrl = `${apiBaseUrl}/api/demo/occupancy`;
 
 function notifyParent(message) {
   if (window.parent && window.parent !== window) {
@@ -195,21 +194,22 @@ function buildSpotOutlineWidthExpression(lotConfig) {
   return expression;
 }
 
+async function fetchLotSpots(appLotId) {
+  const response = await fetch(`${apiBaseUrl}/api/lots/${encodeURIComponent(appLotId)}/spots`);
+  if (!response.ok) throw new Error(`Failed to load spots for ${appLotId}`);
+  return response.json();
+}
+
 async function refreshSpotStatuses() {
   try {
-    const response = await fetch(`${demoOccupancyUrl}?t=${Date.now()}`, { cache: "no-store" });
-    if (!response.ok) return;
-
-    const payload = await response.json();
-    if (!payload || !payload.lots) return;
-
-    for (const lot of config.lots) {
-      const liveLot = payload.lots[lot.appLotId];
+    const spotResponses = await Promise.all(config.lots.map((lot) => fetchLotSpots(lot.appLotId)));
+    for (let index = 0; index < config.lots.length; index += 1) {
+      const lot = config.lots[index];
       const sourceId = `${lot.id}-spots-source`;
       const sourceData = spotSourceRegistry.get(sourceId);
-      if (!liveLot || !sourceData) continue;
+      if (!sourceData) continue;
 
-      const statusMap = new Map((liveLot.spots || []).map((spot) => [spot.spotId, spot.isOccupied === true]));
+      const statusMap = new Map(spotResponses[index].map((spot) => [spot.id, spot.is_occupied]));
       for (const feature of sourceData.features || []) {
         const spotId = feature.properties && feature.properties.spot_id;
         feature.properties = feature.properties || {};
@@ -221,8 +221,20 @@ async function refreshSpotStatuses() {
         source.setData(sourceData);
       }
     }
+
+    for (const lot of config.lots) {
+      const layers = layerRegistry.get(lot.id);
+      if (!layers) continue;
+      if (map.getLayer(layers.spotsFill)) {
+        map.setPaintProperty(layers.spotsFill, "fill-color", buildSpotFillExpression(lot));
+      }
+      if (map.getLayer(layers.spotsOutline)) {
+        map.setPaintProperty(layers.spotsOutline, "line-color", buildSpotOutlineColorExpression(lot));
+        map.setPaintProperty(layers.spotsOutline, "line-width", buildSpotOutlineWidthExpression(lot));
+      }
+    }
   } catch (error) {
-    console.error("Could not refresh demo spot statuses", error);
+    console.error("Could not refresh spot statuses", error);
   }
 }
 
@@ -284,7 +296,8 @@ function focusLot(lotId) {
     type: "uniview:map-lot-selected",
     campusId: lot.campusId,
     mapLotId: lot.id,
-    appLotId: lot.appLotId
+    appLotId: lot.appLotId,
+    hasSpots
   });
 
   map.flyTo({

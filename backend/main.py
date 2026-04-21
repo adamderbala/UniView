@@ -1,181 +1,38 @@
 from __future__ import annotations
 
-import json
 import os
-import sqlite3
-from contextlib import closing
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import datetime
 
-from fastapi import FastAPI, HTTPException
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from backend.db import Campus, ParentNode, ParkingLot, ParkingSpot, SpotReport, University, get_db, init_database
 
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "uniview_demo.db"
-
-ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "https://univiewparking.com",
-    "https://www.univiewparking.com",
-]
-
-DEMO_SPOT_IDS = [f"yellowlot_spot_{index}" for index in range(1, 9)]
-DEMO_LOT = {
-    "lotId": "lot-liv-yellow",
-    "mapLotId": "yellowlot",
-    "name": "Yellow Lot",
-    "campusId": "livingston",
-}
+load_dotenv()
 
 
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def get_allowed_origins() -> list[str]:
+    configured = os.getenv(
+        "FRONTEND_ORIGIN",
+        "http://localhost:5173,http://127.0.0.1:5173,https://univiewparking.com,https://www.univiewparking.com",
+    )
+    origins = [origin.strip() for origin in configured.split(",") if origin.strip()]
+    if "http://127.0.0.1:5173" not in origins:
+        origins.append("http://127.0.0.1:5173")
+    if "http://localhost:5173" not in origins:
+        origins.append("http://localhost:5173")
+    return origins
 
 
-def get_db_connection() -> sqlite3.Connection:
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    return connection
-
-
-def initialize_database() -> None:
-    with closing(get_db_connection()) as connection:
-        connection.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS demo_lots (
-                lot_id TEXT PRIMARY KEY,
-                map_lot_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                campus_id TEXT NOT NULL,
-                total_spaces INTEGER NOT NULL,
-                available_spaces INTEGER NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS demo_spot_states (
-                spot_id TEXT PRIMARY KEY,
-                lot_id TEXT NOT NULL,
-                is_occupied INTEGER NOT NULL,
-                updated_at TEXT NOT NULL,
-                FOREIGN KEY (lot_id) REFERENCES demo_lots (lot_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS demo_ingest_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                device_id TEXT NOT NULL,
-                lot_id TEXT NOT NULL,
-                payload_json TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-            """
-        )
-
-        existing_lot = connection.execute(
-            "SELECT lot_id FROM demo_lots WHERE lot_id = ?",
-            (DEMO_LOT["lotId"],),
-        ).fetchone()
-        if not existing_lot:
-            now = utc_now_iso()
-            connection.execute(
-                """
-                INSERT INTO demo_lots (lot_id, map_lot_id, name, campus_id, total_spaces, available_spaces, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    DEMO_LOT["lotId"],
-                    DEMO_LOT["mapLotId"],
-                    DEMO_LOT["name"],
-                    DEMO_LOT["campusId"],
-                    len(DEMO_SPOT_IDS),
-                    len(DEMO_SPOT_IDS),
-                    now,
-                ),
-            )
-
-        for spot_id in DEMO_SPOT_IDS:
-            connection.execute(
-                """
-                INSERT INTO demo_spot_states (spot_id, lot_id, is_occupied, updated_at)
-                VALUES (?, ?, 0, ?)
-                ON CONFLICT(spot_id) DO NOTHING
-                """,
-                (spot_id, DEMO_LOT["lotId"], utc_now_iso()),
-            )
-
-        connection.commit()
-
-
-def read_demo_occupancy() -> dict[str, object]:
-    with closing(get_db_connection()) as connection:
-        lot_row = connection.execute(
-            """
-            SELECT lot_id, map_lot_id, total_spaces, available_spaces, updated_at
-            FROM demo_lots
-            WHERE lot_id = ?
-            """,
-            (DEMO_LOT["lotId"],),
-        ).fetchone()
-        if not lot_row:
-            initialize_database()
-            return read_demo_occupancy()
-
-        spot_rows = connection.execute(
-            """
-            SELECT spot_id, is_occupied
-            FROM demo_spot_states
-            WHERE lot_id = ?
-            ORDER BY spot_id
-            """,
-            (DEMO_LOT["lotId"],),
-        ).fetchall()
-
-    return {
-        "updatedAt": lot_row["updated_at"],
-        "lots": {
-            lot_row["lot_id"]: {
-                "mapLotId": lot_row["map_lot_id"],
-                "totalSpaces": lot_row["total_spaces"],
-                "availableSpaces": lot_row["available_spaces"],
-                "spots": [
-                    {
-                        "spotId": row["spot_id"],
-                        "isOccupied": bool(row["is_occupied"]),
-                    }
-                    for row in spot_rows
-                ],
-            }
-        },
-    }
-
-
-class SpotInput(BaseModel):
-    spotId: str
-    isOccupied: bool
-
-
-class DemoLotUpdate(BaseModel):
-    lotId: str
-    mapLotId: str = DEMO_LOT["mapLotId"]
-    spots: list[SpotInput]
-
-
-class DemoIngestRequest(BaseModel):
-    deviceId: str
-    observedAt: str | None = None
-    lot: DemoLotUpdate
-
-
-class HealthResponse(BaseModel):
-    status: str
-
-
-app = FastAPI(title="UniView Demo Backend")
+app = FastAPI(title="UniView Backend")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=get_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -183,86 +40,270 @@ app.add_middleware(
 
 
 @app.on_event("startup")
-def on_startup() -> None:
-    initialize_database()
+def setup_database() -> None:
+    init_database()
+
+
+class HealthResponse(BaseModel):
+    status: str
+    service: str
+
+
+class UniversityResponse(BaseModel):
+    id: str
+    name: str
+
+    model_config = {"from_attributes": True}
+
+
+class CampusResponse(BaseModel):
+    id: str
+    university_id: str
+    name: str
+    lot_count: int
+
+
+class LotResponse(BaseModel):
+    id: str
+    campus_id: str
+    name: str
+    total_spaces: int
+    occupied_spaces: int
+    available_spaces: int
+    last_updated: datetime
+
+
+class SpotResponse(BaseModel):
+    id: str
+    lot_id: str
+    is_occupied: bool
+    last_updated: datetime
+
+
+class SpotUpdateInput(BaseModel):
+    spot_id: str
+    is_occupied: bool
+
+
+class LotReportInput(BaseModel):
+    device_id: str
+    lot_id: str
+    observed_at: datetime
+    spots: list[SpotUpdateInput]
+
+
+class ParentUpdateInput(BaseModel):
+    parent_node_id: str
+    collected_at: datetime
+    reports: list[LotReportInput]
+
+
+class ParentUpdateResponse(BaseModel):
+    status: str
+    parent_node_id: str
+    lots_updated: list[str]
+    report_count: int
+
+
+class DemoSpotInput(BaseModel):
+    spotId: str
+    isOccupied: bool
+
+
+class DemoLotUpdate(BaseModel):
+    lotId: str
+    mapLotId: str = "yellowlot"
+    spots: list[DemoSpotInput]
+
+
+class DemoIngestRequest(BaseModel):
+    deviceId: str
+    observedAt: datetime | None = None
+    lot: DemoLotUpdate
+
+
+DEMO_LOT_ID = "yellow_lot"
+DEMO_COMPAT_LOT_IDS = {DEMO_LOT_ID, "lot-liv-yellow"}
+
+
+def lot_to_response(lot: ParkingLot) -> LotResponse:
+    occupied_spaces = sum(1 for spot in lot.spots if spot.is_occupied)
+    return LotResponse(
+        id=lot.id,
+        campus_id=lot.campus_id,
+        name=lot.name,
+        total_spaces=lot.total_spaces,
+        occupied_spaces=occupied_spaces,
+        available_spaces=max(lot.total_spaces - occupied_spaces, 0),
+        last_updated=lot.last_updated,
+    )
 
 
 @app.get("/health", response_model=HealthResponse)
-def health() -> HealthResponse:
-    return HealthResponse(status="ok")
+def health_check() -> HealthResponse:
+    return HealthResponse(status="ok", service="uniview-backend")
+
+
+@app.get("/api/universities", response_model=list[UniversityResponse])
+def list_universities(db: Session = Depends(get_db)) -> list[University]:
+    return db.scalars(select(University).order_by(University.name)).all()
+
+
+@app.get("/api/campuses", response_model=list[CampusResponse])
+def list_campuses(
+    university_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> list[CampusResponse]:
+    stmt = (
+        select(
+            Campus.id,
+            Campus.university_id,
+            Campus.name,
+            func.count(ParkingLot.id).label("lot_count"),
+        )
+        .outerjoin(ParkingLot, ParkingLot.campus_id == Campus.id)
+        .group_by(Campus.id)
+        .order_by(Campus.name)
+    )
+    if university_id:
+        stmt = stmt.where(Campus.university_id == university_id)
+    rows = db.execute(stmt).all()
+    return [CampusResponse(id=row.id, university_id=row.university_id, name=row.name, lot_count=row.lot_count) for row in rows]
+
+
+@app.get("/api/lots", response_model=list[LotResponse])
+def list_lots(
+    campus_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+) -> list[LotResponse]:
+    stmt = select(ParkingLot).order_by(ParkingLot.name)
+    if campus_id:
+        stmt = stmt.where(ParkingLot.campus_id == campus_id)
+    lots = db.scalars(stmt).all()
+    return [lot_to_response(lot) for lot in lots]
+
+
+@app.get("/api/lots/{lot_id}", response_model=LotResponse)
+def get_lot(lot_id: str, db: Session = Depends(get_db)) -> LotResponse:
+    lot = db.get(ParkingLot, lot_id)
+    if not lot:
+        raise HTTPException(status_code=404, detail=f"Lot '{lot_id}' not found")
+    return lot_to_response(lot)
+
+
+@app.get("/api/lots/{lot_id}/spots", response_model=list[SpotResponse])
+def list_lot_spots(lot_id: str, db: Session = Depends(get_db)) -> list[SpotResponse]:
+    lot = db.get(ParkingLot, lot_id)
+    if not lot:
+        raise HTTPException(status_code=404, detail=f"Lot '{lot_id}' not found")
+
+    spots = db.scalars(select(ParkingSpot).where(ParkingSpot.lot_id == lot_id).order_by(ParkingSpot.id)).all()
+    return [SpotResponse(id=spot.id, lot_id=spot.lot_id, is_occupied=spot.is_occupied, last_updated=spot.last_updated) for spot in spots]
+
+
+@app.post("/api/ingest/parent-update", response_model=ParentUpdateResponse)
+def ingest_parent_update(payload: ParentUpdateInput, db: Session = Depends(get_db)) -> ParentUpdateResponse:
+    parent_node = db.scalar(select(ParentNode).where(ParentNode.parent_node_id == payload.parent_node_id))
+    if not parent_node:
+        parent_node = ParentNode(parent_node_id=payload.parent_node_id)
+        db.add(parent_node)
+
+    parent_node.last_seen = payload.collected_at
+
+    updated_lot_ids: set[str] = set()
+    for report in payload.reports:
+        lot = db.get(ParkingLot, report.lot_id)
+        if not lot:
+            raise HTTPException(status_code=404, detail=f"Lot '{report.lot_id}' not found")
+
+        lot.last_updated = report.observed_at
+        for spot_update in report.spots:
+            spot = db.get(ParkingSpot, spot_update.spot_id)
+            if not spot or spot.lot_id != report.lot_id:
+                raise HTTPException(status_code=404, detail=f"Spot '{spot_update.spot_id}' not found in lot '{report.lot_id}'")
+
+            spot.is_occupied = spot_update.is_occupied
+            spot.last_updated = report.observed_at
+            db.add(
+                SpotReport(
+                    device_id=report.device_id,
+                    parent_node_id=payload.parent_node_id,
+                    spot_id=spot.id,
+                    observed_at=report.observed_at,
+                    is_occupied=spot_update.is_occupied,
+                )
+            )
+        updated_lot_ids.add(lot.id)
+
+    db.commit()
+    return ParentUpdateResponse(
+        status="ok",
+        parent_node_id=payload.parent_node_id,
+        lots_updated=sorted(updated_lot_ids),
+        report_count=len(payload.reports),
+    )
 
 
 @app.get("/api/demo/occupancy")
-def get_demo_occupancy() -> dict[str, object]:
-    return read_demo_occupancy()
+def get_demo_occupancy(db: Session = Depends(get_db)) -> dict[str, object]:
+    lot = db.get(ParkingLot, DEMO_LOT_ID)
+    if not lot:
+        raise HTTPException(status_code=404, detail=f"Lot '{DEMO_LOT_ID}' not found")
+
+    spots = db.scalars(select(ParkingSpot).where(ParkingSpot.lot_id == DEMO_LOT_ID).order_by(ParkingSpot.id)).all()
+    occupied_spaces = sum(1 for spot in spots if spot.is_occupied)
+
+    return {
+        "updatedAt": lot.last_updated.isoformat(),
+        "lots": {
+            DEMO_LOT_ID: {
+                "mapLotId": "yellowlot",
+                "totalSpaces": lot.total_spaces,
+                "availableSpaces": max(lot.total_spaces - occupied_spaces, 0),
+                "spots": [
+                    {
+                        "spotId": spot.id,
+                        "isOccupied": spot.is_occupied,
+                    }
+                    for spot in spots
+                ],
+            }
+        },
+    }
 
 
 @app.post("/api/demo/ingest")
-def ingest_demo_occupancy(payload: DemoIngestRequest) -> dict[str, object]:
-    if payload.lot.lotId != DEMO_LOT["lotId"]:
+def ingest_demo_occupancy(payload: DemoIngestRequest, db: Session = Depends(get_db)) -> dict[str, object]:
+    if payload.lot.lotId not in DEMO_COMPAT_LOT_IDS:
         raise HTTPException(
             status_code=400,
-            detail=f"Demo backend only accepts '{DEMO_LOT['lotId']}' right now.",
+            detail=f"Demo backend only accepts {sorted(DEMO_COMPAT_LOT_IDS)!r} right now.",
         )
 
-    incoming_ids = {spot.spotId for spot in payload.lot.spots}
-    missing_ids = [spot_id for spot_id in DEMO_SPOT_IDS if spot_id not in incoming_ids]
-    if missing_ids:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Missing demo spots: {', '.join(missing_ids)}",
-        )
-
-    observed_at = payload.observedAt or utc_now_iso()
-    available_spaces = sum(1 for spot in payload.lot.spots if not spot.isOccupied)
-
-    with closing(get_db_connection()) as connection:
-        connection.execute(
-            """
-            UPDATE demo_lots
-            SET map_lot_id = ?, total_spaces = ?, available_spaces = ?, updated_at = ?
-            WHERE lot_id = ?
-            """,
-            (
-                payload.lot.mapLotId,
-                len(payload.lot.spots),
-                available_spaces,
-                observed_at,
-                payload.lot.lotId,
-            ),
-        )
-
-        for spot in payload.lot.spots:
-            connection.execute(
-                """
-                UPDATE demo_spot_states
-                SET is_occupied = ?, updated_at = ?
-                WHERE spot_id = ? AND lot_id = ?
-                """,
-                (
-                    int(spot.isOccupied),
-                    observed_at,
-                    spot.spotId,
-                    payload.lot.lotId,
-                ),
+    observed_at = payload.observedAt or datetime.utcnow()
+    parent_payload = ParentUpdateInput(
+        parent_node_id="demo-parent-node",
+        collected_at=observed_at,
+        reports=[
+            LotReportInput(
+                device_id=payload.deviceId,
+                lot_id=DEMO_LOT_ID,
+                observed_at=observed_at,
+                spots=[
+                    SpotUpdateInput(
+                        spot_id=spot.spotId,
+                        is_occupied=spot.isOccupied,
+                    )
+                    for spot in payload.lot.spots
+                ],
             )
+        ],
+    )
 
-        connection.execute(
-            """
-            INSERT INTO demo_ingest_events (device_id, lot_id, payload_json, created_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (
-                payload.deviceId,
-                payload.lot.lotId,
-                payload.model_dump_json(),
-                utc_now_iso(),
-            ),
-        )
-        connection.commit()
-
+    response = ingest_parent_update(parent_payload, db)
     return {
-        "status": "ok",
-        "availableSpaces": available_spaces,
-        "updatedAt": observed_at,
+        "status": response.status,
+        "availableSpaces": lot_to_response(db.get(ParkingLot, DEMO_LOT_ID)).available_spaces,
+        "updatedAt": observed_at.isoformat(),
+        "lotsUpdated": response.lots_updated,
     }

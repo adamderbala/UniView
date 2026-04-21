@@ -2,23 +2,21 @@ export interface ParkingLot {
   id: string;
   name: string;
   campusId: string;
-  location: string;
+  location?: string;
   totalSpaces: number;
+  occupiedSpaces: number;
   availableSpaces: number;
-  coordinates: {
+  coordinates?: {
     lat: number;
     lng: number;
   };
-  permitTypes: string[];
-  lastUpdated: Date;
+  permitTypes?: string[];
+  lastUpdated: string;
 }
 
 export interface University {
   id: string;
   name: string;
-  shortName: string;
-  totalLots: number;
-  totalSpaces: number;
 }
 
 export interface Campus {
@@ -29,7 +27,7 @@ export interface Campus {
 }
 
 export interface OccupancyPoint {
-  time: string;
+  label: string;
   occupancy: number;
 }
 
