@@ -7,7 +7,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -200,18 +200,18 @@ def get_demo_occupancy() -> dict[str, object]:
 @app.post("/api/demo/ingest")
 def ingest_demo_occupancy(payload: DemoIngestRequest) -> dict[str, object]:
     if payload.lot.lotId != DEMO_LOT["lotId"]:
-        return {
-            "status": "error",
-            "message": f"Demo backend only accepts '{DEMO_LOT['lotId']}' right now.",
-        }
+        raise HTTPException(
+            status_code=400,
+            detail=f"Demo backend only accepts '{DEMO_LOT['lotId']}' right now.",
+        )
 
     incoming_ids = {spot.spotId for spot in payload.lot.spots}
     missing_ids = [spot_id for spot_id in DEMO_SPOT_IDS if spot_id not in incoming_ids]
     if missing_ids:
-        return {
-            "status": "error",
-            "message": f"Missing demo spots: {', '.join(missing_ids)}",
-        }
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing demo spots: {', '.join(missing_ids)}",
+        )
 
     observed_at = payload.observedAt or utc_now_iso()
     available_spaces = sum(1 for spot in payload.lot.spots if not spot.isOccupied)

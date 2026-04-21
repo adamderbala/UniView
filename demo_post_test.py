@@ -39,7 +39,7 @@ def main() -> None:
     args = parser.parse_args()
 
     occupancy = TEST_PATTERNS[args.pattern]
-    publish_demo_payload(
+    response = publish_demo_payload(
         occupancy,
         device_id=args.device_id,
         api_base_url=args.api_base_url,
@@ -47,6 +47,7 @@ def main() -> None:
     )
     print(f"Posted '{args.pattern}' pattern to {args.api_base_url}")
     print(f"Occupancy: {occupancy}")
+    print(f"Backend response: {response}")
 
 
 if __name__ == "__main__":

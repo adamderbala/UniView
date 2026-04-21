@@ -79,11 +79,16 @@ def publish_demo_payload(
     device_id: str = "edge-yellow-demo-01",
     api_base_url: str | None = None,
     write_local_backup: bool = True,
-) -> None:
+) -> dict[str, object]:
     if write_local_backup:
         write_demo_payload(occupancy)
 
     try:
-        post_demo_payload(occupancy, device_id=device_id, api_base_url=api_base_url)
+        response = post_demo_payload(occupancy, device_id=device_id, api_base_url=api_base_url)
     except error.URLError as request_error:
         raise RuntimeError(f"Could not reach demo backend: {request_error}") from request_error
+
+    if response.get("status") != "ok":
+        raise RuntimeError(f"Demo backend rejected payload: {response}")
+
+    return response
