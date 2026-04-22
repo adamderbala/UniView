@@ -88,12 +88,12 @@ VITE_API_BASE_URL=https://your-render-backend.onrender.com
   "collected_at": "2026-03-22T12:00:00Z",
   "reports": [
     {
-      "device_id": "edge-yellow-lot-01",
-      "lot_id": "yellow_lot",
+      "device_id": "edge-jerseymikes-01",
+      "lot_id": "jerseymikes",
       "observed_at": "2026-03-22T11:59:50Z",
       "spots": [
-        { "spot_id": "yellowlot_spot_1", "is_occupied": true },
-        { "spot_id": "yellowlot_spot_2", "is_occupied": false }
+        { "spot_id": "jerseymikes_spot_1", "is_occupied": true },
+        { "spot_id": "jerseymikes_spot_2", "is_occupied": false }
       ]
     }
   ]

@@ -13,22 +13,22 @@ This folder is for the current one-node setup where the `Pi 4` does everything:
 
 ## Quick Demo
 
-Mark the first 3 spots in `yellow_lot` as occupied and send the update:
+Mark the first 3 spots in `jerseymikes` as occupied and send the update:
 
 ```bash
-.venv/bin/python -m pidemo.pi4_update --lot-id yellow_lot --occupied-count 3
+.venv/bin/python -m pidemo.pi4_update --lot-id jerseymikes --occupied-count 3
 ```
 
 If your local Python/OpenSSL setup complains about certificates:
 
 ```bash
-.venv/bin/python -m pidemo.pi4_update --lot-id yellow_lot --occupied-count 3 --insecure
+.venv/bin/python -m pidemo.pi4_update --lot-id jerseymikes --occupied-count 3 --insecure
 ```
 
 Preview the payload without sending it:
 
 ```bash
-.venv/bin/python -m pidemo.pi4_update --lot-id yellow_lot --occupied-count 3 --dry-run
+.venv/bin/python -m pidemo.pi4_update --lot-id jerseymikes --occupied-count 3 --dry-run
 ```
 
 ## If CV Outputs a JSON File
@@ -39,8 +39,8 @@ Example file:
 
 ```json
 {
-  "lot_id": "yellow_lot",
-  "occupied_spots": ["yellowlot_spot_1", "yellowlot_spot_2"],
+  "lot_id": "jerseymikes",
+  "occupied_spots": ["jerseymikes_spot_1", "jerseymikes_spot_2"],
   "observed_at": "2026-03-24T18:30:00Z"
 }
 ```

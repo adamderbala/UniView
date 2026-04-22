@@ -12,6 +12,7 @@ DEFAULT_BACKEND_URL = "https://uniview.onrender.com"
 LOT_SPOT_FILES = {
     "core_building": "demo-spots.geojson",
     "stadium_west": "stadium-west-spots.geojson",
+    "jerseymikes": "jerseymikes-spots.geojson",
     "yellow_lot": "yellowlot-spots.geojson",
     "green_lot": "greenlot-spots.geojson",
     "lot_105": "lot105-spots.geojson",
@@ -127,11 +128,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--node-id", default="pi4-demo-1", help="Pi 4 node ID")
     parser.add_argument("--backend-url", default=DEFAULT_BACKEND_URL, help="Backend base URL")
-    parser.add_argument("--lot-id", help="Backend lot ID, for example yellow_lot")
+    parser.add_argument("--lot-id", help="Backend lot ID, for example jerseymikes")
     parser.add_argument(
         "--occupied-spots",
         default="",
-        help="Comma-separated occupied spot IDs, for example yellowlot_spot_1,yellowlot_spot_2",
+        help="Comma-separated occupied spot IDs, for example jerseymikes_spot_1,jerseymikes_spot_2",
     )
     parser.add_argument(
         "--occupied-count",

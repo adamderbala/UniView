@@ -8,11 +8,12 @@ from pathlib import Path
 from typing import Iterable
 
 
-DEMO_LOT_ID = "lot-liv-yellow"
-DEMO_MAP_LOT_ID = "yellowlot"
-DEMO_SPOT_IDS = [f"yellowlot_spot_{index}" for index in range(1, 9)]
+DEMO_LOT_ID = "jerseymikes"
+DEMO_MAP_LOT_ID = "jerseymikes"
+DEMO_SPOT_IDS = [f"jerseymikes_spot_{index}" for index in range(1, 9)]
 DEMO_OUTPUT_PATH = Path(__file__).resolve().parent / "website" / "public" / "demo" / "occupancy.json"
 DEMO_API_BASE_URL = os.getenv("DEMO_API_BASE_URL", "http://127.0.0.1:8000")
+DEMO_API_TIMEOUT_SECONDS = float(os.getenv("DEMO_API_TIMEOUT_SECONDS", "5"))
 
 
 def build_payload(
@@ -106,7 +107,7 @@ def post_payload(
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with request.urlopen(http_request, timeout=5) as response:
+    with request.urlopen(http_request, timeout=DEMO_API_TIMEOUT_SECONDS) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -130,7 +131,7 @@ def post_demo_payload(occupancy: Iterable[int | bool], *, device_id: str = "edge
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with request.urlopen(http_request, timeout=5) as response:
+    with request.urlopen(http_request, timeout=DEMO_API_TIMEOUT_SECONDS) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -165,7 +166,7 @@ def publish_demo_payload(
 
     try:
         response = post_demo_payload(occupancy, device_id=device_id, api_base_url=api_base_url)
-    except error.URLError as request_error:
+    except (error.URLError, TimeoutError) as request_error:
         raise RuntimeError(f"Could not reach demo backend: {request_error}") from request_error
 
     if response.get("status") != "ok":
@@ -192,7 +193,7 @@ def publish_payload(
             device_id=device_id,
             api_base_url=api_base_url,
         )
-    except error.URLError as request_error:
+    except (error.URLError, TimeoutError) as request_error:
         raise RuntimeError(f"Could not reach backend: {request_error}") from request_error
 
     if response.get("status") != "ok":

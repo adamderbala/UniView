@@ -132,6 +132,34 @@
       }
     },
     {
+      "id": "jerseymikes",
+      "name": "Jersey Mike's",
+      "campusId": "livingston",
+      "appLotId": "jerseymikes",
+      "previewPoint": [
+        -74.44120487904314,
+        40.52545611661328
+      ],
+      "focusView": {
+        "center": [
+          -74.44120487904314,
+          40.52545611661328
+        ],
+        "zoom": 20.5,
+        "speed": 0.65
+      },
+      "paths": {
+        "boundary": "./data/lots/jerseymikes-boundary.geojson",
+        "spots": "./data/lots/jerseymikes-spots.geojson"
+      },
+      "styles": {
+        "boundaryFill": "#ef4444",
+        "boundaryOutline": "#991b1b",
+        "defaultSpotFill": "#10b981",
+        "spotOverrides": []
+      }
+    },
+    {
       "id": "yellowlot",
       "name": "Yellow Lot",
       "campusId": "livingston",

@@ -112,7 +112,7 @@ class DemoSpotInput(BaseModel):
 
 class DemoLotUpdate(BaseModel):
     lotId: str
-    mapLotId: str = "yellowlot"
+    mapLotId: str = "jerseymikes"
     spots: list[DemoSpotInput]
 
 
@@ -122,8 +122,8 @@ class DemoIngestRequest(BaseModel):
     lot: DemoLotUpdate
 
 
-DEMO_LOT_ID = "yellow_lot"
-DEMO_COMPAT_LOT_IDS = {DEMO_LOT_ID, "lot-liv-yellow"}
+DEMO_LOT_ID = "jerseymikes"
+DEMO_COMPAT_LOT_IDS = {DEMO_LOT_ID}
 
 
 def lot_to_response(lot: ParkingLot) -> LotResponse:
@@ -257,7 +257,7 @@ def get_demo_occupancy(db: Session = Depends(get_db)) -> dict[str, object]:
         "updatedAt": lot.last_updated.isoformat(),
         "lots": {
             DEMO_LOT_ID: {
-                "mapLotId": "yellowlot",
+                "mapLotId": "jerseymikes",
                 "totalSpaces": lot.total_spaces,
                 "availableSpaces": max(lot.total_spaces - occupied_spaces, 0),
                 "spots": [

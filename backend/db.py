@@ -132,6 +132,7 @@ SEED_LOTS = [
     {"id": "stadium_west", "campus_id": "busch", "name": "Stadium West Lot", "total_spaces": 520},
     {"id": "lot_30", "campus_id": "college-ave", "name": "Lot 30", "total_spaces": 320},
     {"id": "lot_42", "campus_id": "college-ave", "name": "Lot 42", "total_spaces": 420},
+    {"id": "jerseymikes", "campus_id": "livingston", "name": "Jersey Mike's", "total_spaces": 8},
     {"id": "yellow_lot", "campus_id": "livingston", "name": "Yellow Lot", "total_spaces": 340},
     {"id": "green_lot", "campus_id": "livingston", "name": "Green Lot", "total_spaces": 280},
     {"id": "lot_105", "campus_id": "livingston", "name": "Lot 105", "total_spaces": 260},
@@ -145,6 +146,7 @@ SEED_LOTS = [
 SPOT_FILES = {
     "core_building": "demo-spots.geojson",
     "stadium_west": "stadium-west-spots.geojson",
+    "jerseymikes": "jerseymikes-spots.geojson",
     "yellow_lot": "yellowlot-spots.geojson",
     "green_lot": "greenlot-spots.geojson",
     "lot_105": "lot105-spots.geojson",

@@ -1,7 +1,7 @@
 import numpy as np
 import cv2 as cv
 import os
-from time import sleep
+from time import monotonic, sleep
 from picamera2 import Picamera2
 
 from demo_integration import publish_payload
@@ -31,6 +31,7 @@ LOT_SPACES_COLS = 4
 HEADLESS = not os.getenv("DISPLAY")
 BACKEND_LOT_ID = os.getenv("COMPVISION_LOT_ID", "lot_101")
 BACKEND_MAP_LOT_ID = os.getenv("COMPVISION_MAP_LOT_ID", "lot101")
+PUBLISH_INTERVAL_SECONDS = float(os.getenv("COMPVISION_PUBLISH_INTERVAL_SECONDS", "1.0"))
 BACKEND_SPOT_IDS = [
 	spot_id.strip()
 	for spot_id in os.getenv(
@@ -61,6 +62,12 @@ def show_frame(window_name, frame):
 def should_quit():
 	return (not HEADLESS) and cv.waitKey(1) == ord('q')
 
+
+def rect_bounds(points):
+	x_values = [int(point[0]) for point in points]
+	y_values = [int(point[1]) for point in points]
+	return min(x_values), min(y_values), max(x_values), max(y_values)
+
 #Bacground subtraction init
 MOG2 = cv.createBackgroundSubtractorMOG2()
 
@@ -88,7 +95,14 @@ while len(spots) != NUM_SPOTS:
 			bound_area = x * y
 			bounds = np.intp(cv.boxPoints(cv.minAreaRect(cont)))
 	#print(bound_area)
-	cv.rectangle(frame_gray_blur, bounds[0], bounds[2], (255, 255, 255), THICKNESS)
+	if len(bounds) < 4:
+		print("Could not find lot boundary yet. Reposition camera and keep the lot in frame.")
+		show_frame("Camera", frame_gray_blur)
+		if should_quit():
+			break
+		continue
+	min_x, min_y, max_x, max_y = rect_bounds(bounds)
+	cv.rectangle(frame_gray_blur, (min_x, min_y), (max_x, max_y), (255, 255, 255), THICKNESS)
 	#Find borders of individual spaces
 	lot_spaces_canny = cv.Canny(frame_gray_blur, SPOT_CANNY_LOW, SPOT_CANNY_HIGH)
 	lot_spaces, lot_spaces_enum = cv.findContours(lot_spaces_canny, cv.RETR_CCOMP, cv.CHAIN_APPROX_SIMPLE)
@@ -115,16 +129,14 @@ while len(spots) != NUM_SPOTS:
 	if QUICK_SETUP:
 		spots_compare = []
 		spots = []
-		MIN_X, MAX_Y = bounds[0]
-		MAX_X, MIN_Y = bounds[2]
-		STEP_X = (MAX_X - MIN_X) / LOT_SPACES_COLS
-		STEP_Y = (MAX_Y - MIN_Y) / LOT_SPACES_ROWS
+		step_x = (max_x - min_x) / LOT_SPACES_COLS
+		step_y = (max_y - min_y) / LOT_SPACES_ROWS
 		for r in range(LOT_SPACES_ROWS):
 			for c in range(LOT_SPACES_COLS):
-				p1 = [MIN_X + STEP_X * c, MIN_Y + STEP_Y * r]
-				p2 = [p1[0] + STEP_X, p1[1]]
-				p3 = [p1[0] + STEP_X, p1[1] + STEP_Y]
-				p4 = [p1[0], p1[1] + STEP_Y]
+				p1 = [min_x + step_x * c, min_y + step_y * r]
+				p2 = [p1[0] + step_x, p1[1]]
+				p3 = [p1[0] + step_x, p1[1] + step_y]
+				p4 = [p1[0], p1[1] + step_y]
 				spots_compare.append(cv.minAreaRect(np.array([p1, p2, p3, p4], dtype=np.float32)))
 				spots.append(np.intp([p1, p2, p3, p4]))
 		break
@@ -133,6 +145,8 @@ while len(spots) != NUM_SPOTS:
 		break
 
 #Mainloop
+last_published_occupancy = None
+last_publish_at = 0.0
 while True:
 	frame = picam2.capture_array()
 	foreground = MOG2.apply(frame, learningRate = 0.001)
@@ -155,17 +169,28 @@ while True:
 			color = (0, 0, 255)
 			print("Space occupied")
 		cv.rectangle(lot_canny_close, space[0], space[2], color, -1)
-	try:
-		response = publish_payload(
-			lot_occupancy,
-			lot_id=BACKEND_LOT_ID,
-			map_lot_id=BACKEND_MAP_LOT_ID,
-			spot_ids=BACKEND_SPOT_IDS,
-			device_id="pi-compvision-01",
-		)
-		print(f"Published occupancy update: {response}")
-	except Exception as error:
-		print(f"Could not publish occupancy payload: {error}")
+	now = monotonic()
+	should_publish = (
+		last_published_occupancy is None
+		or lot_occupancy != last_published_occupancy
+		or now - last_publish_at >= PUBLISH_INTERVAL_SECONDS
+	)
+	if should_publish:
+		try:
+			response = publish_payload(
+				lot_occupancy,
+				lot_id=BACKEND_LOT_ID,
+				map_lot_id=BACKEND_MAP_LOT_ID,
+				spot_ids=BACKEND_SPOT_IDS,
+				device_id="pi-compvision-01",
+			)
+			last_published_occupancy = lot_occupancy.copy()
+			last_publish_at = now
+			print(f"Published occupancy update: {response}")
+		except KeyboardInterrupt:
+			break
+		except Exception as error:
+			print(f"Could not publish occupancy payload: {error}")
 	#cv.drawContours(lot_canny_close, spots, -1, (0, 0, 255), 3)
 	show_frame("Camera", lot_canny_close)
 
@@ -175,4 +200,3 @@ while True:
 #Uninitialization
 picam2.stop()
 cv.destroyAllWindows()
-

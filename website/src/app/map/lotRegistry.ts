@@ -13,6 +13,11 @@ export const lotMapBindings: LotMapBinding[] = [
     status: "ready",
   },
   {
+    lotId: "jerseymikes",
+    mapLotId: "jerseymikes",
+    status: "ready",
+  },
+  {
     lotId: "yellow_lot",
     mapLotId: "yellowlot",
     status: "ready",
