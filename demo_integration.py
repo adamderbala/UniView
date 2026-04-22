@@ -15,10 +15,16 @@ DEMO_OUTPUT_PATH = Path(__file__).resolve().parent / "website" / "public" / "dem
 DEMO_API_BASE_URL = os.getenv("DEMO_API_BASE_URL", "http://127.0.0.1:8000")
 
 
-def build_demo_payload(occupancy: Iterable[int | bool]) -> dict[str, object]:
+def build_payload(
+    occupancy: Iterable[int | bool],
+    *,
+    lot_id: str,
+    map_lot_id: str,
+    spot_ids: list[str],
+) -> dict[str, object]:
     states = [bool(value) for value in occupancy]
-    if len(states) != len(DEMO_SPOT_IDS):
-        raise ValueError(f"Expected {len(DEMO_SPOT_IDS)} demo spot states, got {len(states)}")
+    if len(states) != len(spot_ids):
+        raise ValueError(f"Expected {len(spot_ids)} spot states, got {len(states)}")
 
     available_spaces = sum(1 for state in states if not state)
     updated_at = datetime.now(timezone.utc).isoformat()
@@ -26,20 +32,29 @@ def build_demo_payload(occupancy: Iterable[int | bool]) -> dict[str, object]:
     return {
         "updatedAt": updated_at,
         "lots": {
-            DEMO_LOT_ID: {
-                "mapLotId": DEMO_MAP_LOT_ID,
-                "totalSpaces": len(DEMO_SPOT_IDS),
+            lot_id: {
+                "mapLotId": map_lot_id,
+                "totalSpaces": len(spot_ids),
                 "availableSpaces": available_spaces,
                 "spots": [
                     {
                         "spotId": spot_id,
                         "isOccupied": is_occupied,
                     }
-                    for spot_id, is_occupied in zip(DEMO_SPOT_IDS, states, strict=True)
+                    for spot_id, is_occupied in zip(spot_ids, states, strict=True)
                 ],
             }
         },
     }
+
+
+def build_demo_payload(occupancy: Iterable[int | bool]) -> dict[str, object]:
+    return build_payload(
+        occupancy,
+        lot_id=DEMO_LOT_ID,
+        map_lot_id=DEMO_MAP_LOT_ID,
+        spot_ids=DEMO_SPOT_IDS,
+    )
 
 
 def write_demo_payload(occupancy: Iterable[int | bool]) -> Path:
@@ -49,14 +64,27 @@ def write_demo_payload(occupancy: Iterable[int | bool]) -> Path:
     return DEMO_OUTPUT_PATH
 
 
-def post_demo_payload(occupancy: Iterable[int | bool], *, device_id: str = "edge-yellow-demo-01", api_base_url: str | None = None) -> dict[str, object]:
-    payload = build_demo_payload(occupancy)
-    lot_payload = payload["lots"][DEMO_LOT_ID]
+def post_payload(
+    occupancy: Iterable[int | bool],
+    *,
+    lot_id: str,
+    map_lot_id: str,
+    spot_ids: list[str],
+    device_id: str,
+    api_base_url: str | None = None,
+) -> dict[str, object]:
+    payload = build_payload(
+        occupancy,
+        lot_id=lot_id,
+        map_lot_id=map_lot_id,
+        spot_ids=spot_ids,
+    )
+    lot_payload = payload["lots"][lot_id]
     ingest_payload = {
         "deviceId": device_id,
         "observedAt": payload["updatedAt"],
         "lot": {
-            "lotId": DEMO_LOT_ID,
+            "lotId": lot_id,
             "mapLotId": lot_payload["mapLotId"],
             "spots": lot_payload["spots"],
         },
@@ -71,6 +99,17 @@ def post_demo_payload(occupancy: Iterable[int | bool], *, device_id: str = "edge
     )
     with request.urlopen(http_request, timeout=5) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def post_demo_payload(occupancy: Iterable[int | bool], *, device_id: str = "edge-yellow-demo-01", api_base_url: str | None = None) -> dict[str, object]:
+    return post_payload(
+        occupancy,
+        lot_id=DEMO_LOT_ID,
+        map_lot_id=DEMO_MAP_LOT_ID,
+        spot_ids=DEMO_SPOT_IDS,
+        device_id=device_id,
+        api_base_url=api_base_url,
+    )
 
 
 def publish_demo_payload(
@@ -90,5 +129,32 @@ def publish_demo_payload(
 
     if response.get("status") != "ok":
         raise RuntimeError(f"Demo backend rejected payload: {response}")
+
+    return response
+
+
+def publish_payload(
+    occupancy: Iterable[int | bool],
+    *,
+    lot_id: str,
+    map_lot_id: str,
+    spot_ids: list[str],
+    device_id: str,
+    api_base_url: str | None = None,
+) -> dict[str, object]:
+    try:
+        response = post_payload(
+            occupancy,
+            lot_id=lot_id,
+            map_lot_id=map_lot_id,
+            spot_ids=spot_ids,
+            device_id=device_id,
+            api_base_url=api_base_url,
+        )
+    except error.URLError as request_error:
+        raise RuntimeError(f"Could not reach backend: {request_error}") from request_error
+
+    if response.get("status") != "ok":
+        raise RuntimeError(f"Backend rejected payload: {response}")
 
     return response
