@@ -81,10 +81,43 @@ def post_payload(
     )
     lot_payload = payload["lots"][lot_id]
     ingest_payload = {
+        "parent_node_id": f"{device_id}-parent",
+        "collected_at": payload["updatedAt"],
+        "reports": [
+            {
+                "device_id": device_id,
+                "lot_id": lot_id,
+                "observed_at": payload["updatedAt"],
+                "spots": [
+                    {
+                        "spot_id": spot["spotId"],
+                        "is_occupied": spot["isOccupied"],
+                    }
+                    for spot in lot_payload["spots"]
+                ],
+            }
+        ],
+    }
+
+    base_url = (api_base_url or DEMO_API_BASE_URL).rstrip("/")
+    http_request = request.Request(
+        f"{base_url}/api/ingest/parent-update",
+        data=json.dumps(ingest_payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with request.urlopen(http_request, timeout=5) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def post_demo_payload(occupancy: Iterable[int | bool], *, device_id: str = "edge-yellow-demo-01", api_base_url: str | None = None) -> dict[str, object]:
+    payload = build_demo_payload(occupancy)
+    lot_payload = payload["lots"][DEMO_LOT_ID]
+    ingest_payload = {
         "deviceId": device_id,
         "observedAt": payload["updatedAt"],
         "lot": {
-            "lotId": lot_id,
+            "lotId": DEMO_LOT_ID,
             "mapLotId": lot_payload["mapLotId"],
             "spots": lot_payload["spots"],
         },
@@ -101,12 +134,20 @@ def post_payload(
         return json.loads(response.read().decode("utf-8"))
 
 
-def post_demo_payload(occupancy: Iterable[int | bool], *, device_id: str = "edge-yellow-demo-01", api_base_url: str | None = None) -> dict[str, object]:
+def post_parent_update_payload(
+    occupancy: Iterable[int | bool],
+    *,
+    lot_id: str,
+    map_lot_id: str,
+    spot_ids: list[str],
+    device_id: str,
+    api_base_url: str | None = None,
+) -> dict[str, object]:
     return post_payload(
         occupancy,
-        lot_id=DEMO_LOT_ID,
-        map_lot_id=DEMO_MAP_LOT_ID,
-        spot_ids=DEMO_SPOT_IDS,
+        lot_id=lot_id,
+        map_lot_id=map_lot_id,
+        spot_ids=spot_ids,
         device_id=device_id,
         api_base_url=api_base_url,
     )
@@ -143,7 +184,7 @@ def publish_payload(
     api_base_url: str | None = None,
 ) -> dict[str, object]:
     try:
-        response = post_payload(
+        response = post_parent_update_payload(
             occupancy,
             lot_id=lot_id,
             map_lot_id=map_lot_id,
